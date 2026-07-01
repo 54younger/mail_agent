@@ -20,7 +20,7 @@ dependencies:
   objectbox_flutter_libs: ^4.0.0
 
   # Email / IMAP
-  enough_mail: ^3.0.0
+  enough_mail: ^2.1.7
 
   # Secure credential storage (Windows Credential Manager / iOS Keychain)
   flutter_secure_storage: ^9.2.2
