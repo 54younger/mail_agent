@@ -12,10 +12,10 @@ class InboxScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('收件箱')),
-      body: Column(
+      body: const Column(
         children: [
-          const IndexProgressBar(),
-          const Expanded(
+          IndexProgressBar(),
+          Expanded(
             child: Center(child: Text('Phase 2 将实现邮件列表')),
           ),
         ],
