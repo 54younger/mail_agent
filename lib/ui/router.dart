@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'screens/classify/classify_screen.dart';
-import 'screens/inbox/inbox_screen.dart';
-import 'screens/jobs/jobs_screen.dart';
-import 'screens/search/search_screen.dart';
-import 'screens/settings/settings_screen.dart';
 import 'screens/setup/account_setup_screen.dart';
+import 'shell/app_shell.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -67,16 +63,20 @@ class AppRouterDelegate extends RouterDelegate<Object>
   }
 
   MaterialPage<void> _page(String route) => MaterialPage<void>(
-        key: ValueKey(route),
-        child: switch (route) {
-          AppRoutes.inbox => const InboxScreen(),
-          AppRoutes.search => const SearchScreen(),
-          AppRoutes.classify => const ClassifyScreen(),
-          AppRoutes.jobs => const JobsScreen(),
-          AppRoutes.settings => const SettingsScreen(),
-          _ => const AccountSetupScreen(),
-        },
+        key: ValueKey(route == AppRoutes.setup ? AppRoutes.setup : 'shell'),
+        child: route == AppRoutes.setup
+            ? const AccountSetupScreen()
+            : AppShell(initialIndex: _tabIndex(route)),
       );
+
+  /// Maps a legacy route constant to the shell's tab index.
+  static int _tabIndex(String route) => switch (route) {
+        AppRoutes.search => 1,
+        AppRoutes.classify => 2,
+        AppRoutes.jobs => 3,
+        AppRoutes.settings => 4,
+        _ => 0, // inbox
+      };
 
   @override
   Future<void> setNewRoutePath(Object config) async =>

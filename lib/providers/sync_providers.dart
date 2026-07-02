@@ -42,14 +42,24 @@ class SyncNotifier extends Notifier<SyncState> {
   @override
   SyncState build() => const SyncIdle();
 
-  /// Starts a full initial sync for [account].
-  /// Does not need to be awaited — caller can navigate away immediately.
-  Future<void> startInitialSync(Account account) async {
+  /// Starts a full initial sync for [account] (first bind — fetches all
+  /// headers). Does not need to be awaited — caller can navigate away.
+  Future<void> startInitialSync(Account account) =>
+      _run(account, full: true);
+
+  /// Incremental launch/refresh sync — fetches only the newest batch.
+  /// Called when the app reopens with an already-bound account so the
+  /// progress bar appears and new mail is pulled in.
+  Future<void> syncAccount(Account account) => _run(account, full: false);
+
+  Future<void> _run(Account account, {required bool full}) async {
     _lastAccount = account;
     state = const SyncRunning(0, 0);
     final service = ref.read(mailSyncServiceProvider);
+    final stream =
+        full ? service.initialSync(account) : service.refresh(account);
 
-    await for (final event in service.initialSync(account)) {
+    await for (final event in stream) {
       switch (event) {
         case SyncProgress(:final fetched, :final total):
           state = SyncRunning(fetched, total);
@@ -70,11 +80,18 @@ class SyncNotifier extends Notifier<SyncState> {
   /// screen can start fresh. Navigation is the caller's responsibility
   /// (avoids a circular import between providers and the UI router).
   Future<void> resetForResetup() async {
-    final account = _lastAccount;
-    if (account == null) return;
+    final store = ref.read(objectBoxStoreProvider);
+    // On a fresh launch _lastAccount is null, so fall back to the stored
+    // account — this is what makes re-bind work without a prior sync failure.
+    final all = store.accounts.getAll();
+    final account = _lastAccount ?? (all.isEmpty ? null : all.first);
+    if (account == null) {
+      state = const SyncIdle();
+      return;
+    }
 
     await ref.read(secureStorageProvider).delete(key: account.credentialKey);
-    ref.read(objectBoxStoreProvider).accounts.remove(account.id);
+    store.accounts.remove(account.id);
 
     state = const SyncIdle();
     _lastAccount = null;

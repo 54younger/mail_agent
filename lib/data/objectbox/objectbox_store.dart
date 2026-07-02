@@ -36,6 +36,18 @@ class ObjectBoxStore {
 
   Store get store => _store;
 
+  /// Returns a `uid -> id` map for all stored emails in [folder].
+  /// Used by the sync service to upsert (avoid duplicate rows on re-sync).
+  Map<String, int> emailIdsByUid(String folder) {
+    final query =
+        _store.box<EmailMessage>().query(EmailMessage_.folder.equals(folder)).build();
+    try {
+      return {for (final e in query.find()) e.uid: e.id};
+    } finally {
+      query.close();
+    }
+  }
+
   void close() => _store.close();
 }
 

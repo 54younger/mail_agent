@@ -124,7 +124,7 @@ class MailSyncService {
         final seq = MessageSequence.fromRange(low, high);
         final result = await client.fetchMessages(seq, _headersDef);
 
-        final rows = result.messages.map((m) => _toRow(m, 'INBOX')).toList();
+        final rows = _upsertRows(result.messages, 'INBOX');
         if (rows.isNotEmpty) {
           _store.emails.putMany(rows);
           fetched += rows.length;
@@ -144,10 +144,17 @@ class MailSyncService {
     }
   }
 
-  /// Fetches the latest [_fetchBatch] messages; safe to call periodically.
-  Future<void> incrementalSync(Account account) async {
+  /// Streamed launch/refresh sync: fetches the latest [_fetchBatch] messages
+  /// and yields progress so the UI can show a short progress bar on reopen.
+  /// Upserts by UID so re-syncing never duplicates rows.
+  Stream<SyncEvent> refresh(Account account) => _refresh(account);
+
+  Stream<SyncEvent> _refresh(Account account) async* {
     final password = await _secureStorage.read(key: account.credentialKey);
-    if (password == null || password.isEmpty) return;
+    if (password == null || password.isEmpty) {
+      yield SyncError('找不到密码，请重新绑定账号', ImapErrorKind.authFailed);
+      return;
+    }
 
     final client = ImapClient(isLogEnabled: false);
     try {
@@ -159,20 +166,30 @@ class MailSyncService {
       await client.login(account.username, password);
       final select = await client.selectInbox();
       final total = select.messagesExists ?? 0;
-      if (total == 0) return;
+      if (total == 0) {
+        yield SyncDone(0);
+        await client.logout();
+        return;
+      }
 
       final low = (total - _fetchBatch + 1).clamp(1, total);
+      final want = total - low + 1;
+      yield SyncProgress(0, want);
+
       final seq = MessageSequence.fromRange(low, total);
       final result = await client.fetchMessages(seq, _headersDef);
-
-      final rows = result.messages.map((m) => _toRow(m, 'INBOX')).toList();
+      final rows = _upsertRows(result.messages, 'INBOX');
       if (rows.isNotEmpty) _store.emails.putMany(rows);
 
       account.lastSyncAt = DateTime.now().toIso8601String();
       _store.accounts.put(account);
       await client.logout();
-    } catch (_) {
-      // Best-effort; suppress to avoid disrupting the UI.
+
+      yield SyncProgress(want, want);
+      yield SyncDone(want);
+    } catch (e) {
+      final kind = classifyImapError(e);
+      yield SyncError(kind.userMessage, kind);
     } finally {
       await client.disconnect();
     }
@@ -215,6 +232,18 @@ class MailSyncService {
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────────
+
+  /// Maps messages to rows, reusing existing ObjectBox ids for known UIDs so
+  /// `putMany` updates in place instead of inserting duplicates.
+  List<EmailMessage> _upsertRows(List<MimeMessage> messages, String folder) {
+    final existing = _store.emailIdsByUid(folder);
+    return messages.map((m) {
+      final row = _toRow(m, folder);
+      final id = existing[row.uid];
+      if (id != null) row.id = id;
+      return row;
+    }).toList();
+  }
 
   EmailMessage _toRow(MimeMessage msg, String folder) {
     final env = msg.envelope;
