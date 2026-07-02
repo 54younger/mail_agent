@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/account.dart';
 import '../../../data/objectbox/objectbox_store.dart';
 import '../../../providers/sync_providers.dart';
+import '../../../services/translation_service.dart';
 import '../../router.dart';
 
 /// Settings home. Hosts the bound-account section (info, manual sync, re-bind)
@@ -54,6 +55,26 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => _confirmRebind(context, ref),
             ),
           ],
+          const Divider(height: 24),
+          _SectionHeader('翻译'),
+          ListTile(
+            leading: const Icon(Icons.translate),
+            title: const Text('翻译目标语言'),
+            subtitle: const Text('阅读邮件时可将外语翻译为该语言'),
+            trailing: DropdownButton<String>(
+              value: ref.watch(translationTargetProvider),
+              underline: const SizedBox.shrink(),
+              onChanged: (code) {
+                if (code != null) {
+                  ref.read(translationTargetProvider.notifier).set(code);
+                }
+              },
+              items: [
+                for (final entry in kTranslationTargets.entries)
+                  DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+              ],
+            ),
+          ),
           const Divider(height: 24),
           _SectionHeader('AI 引擎'),
           const ListTile(

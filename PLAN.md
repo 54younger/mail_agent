@@ -91,8 +91,12 @@ Flutter 工程初始化、Riverpod、ObjectBox schema、平台安全存储封装
 
 ### Phase 2 — 邮件浏览 UI（秒级可用，不依赖 AI）
 邮件列表 / 详情阅读 / 文件夹导航。绑定后立即可浏览可读信。
+- **列表分页**：每页默认最新 100 条，支持上一页/下一页（已实现，`inbox_screen.dart`）。
+- **HTML 正文渲染**：优先取 HTML 正文，用 `flutter_widget_from_html_core` 渲染，远程 `<img>` 图片内联显示（已实现）。
+  - 待办：内嵌 `cid:` 图片（需拉取 multipart 附件并建 cid→bytes 映射）；远程图片"是否自动加载"隐私开关。
 
 ### Phase 3 — 本地 Embedding + 语义搜索 ⭐MVP 核心
+0. **正文清洗（embedding 前置）**：embedding 只针对可读文本 —— 先剥离 HTML 标签、图片 URL 与超链接 URL（`<img src>`、`href` 链接、`http(s)://…` 图片/追踪像素地址一律不进入向量）。仅保留人类可读正文 + 主题 + 发件人用于向量化，避免链接噪声污染语义检索。
 1. **Provider 抽象** + **模型目录 + 下载管理 + 性能推荐**。
 2. **ONNX 双端验证**（本阶段第一技术验证点；不过则默认走云端）。
 3. **索引管线**：后台 Isolate、分批、优先级队列（最近优先+疑似求职优先）、可恢复。
@@ -100,6 +104,16 @@ Flutter 工程初始化、Riverpod、ObjectBox schema、平台安全存储封装
 
 ### Phase 4 — AI 分类与自动归档 ⭐MVP 核心
 用户自定义类别 → Claude Haiku 打标（结构化输出）→ 规则落文件夹 → 结果可人工纠正、缓存复用。
+
+### Phase 4.5 — 邮件翻译（自动外语→目标语言）
+自动检测非目标语言的邮件并翻译；**默认目标语言 = 英语**，用户可在设置改为中文或其他语言。
+- **触发**：正文渲染时若检测到源语言 ≠ 目标语言，展示"翻译"入口/自动翻译（自动 vs 按需待定，见下）。
+- **引擎**：走 **Claude**（与 ClassifyService 复用同一 Claude 客户端与 API Key 管理）。
+  - 依赖（当前均为占位/未实现）：① Claude HTTP 客户端；② 设置里的 **Claude API Key 配置 UI**（现仅有 `secureStorageKeyClaudeApiKey` 存储位）。翻译落地需先补齐这两项（与 Phase 4 重叠）。
+- **缓存**：翻译结果与检测到的源语言随邮件缓存，避免重复调用（需给 `EmailMessage` 加 `translatedText` / `detectedLang` 字段 → build_runner 重生成）。
+- **已定决策**：① 引擎 = Claude；② 触发 = **按需**（每封一个"翻译"按钮）；③ 目标语言设置放"设置"页，默认英语。
+- **落地节奏**：**先做 UI 骨架**（翻译按钮 + 目标语言设置 + 原文/译文切换 + `TranslationService` 占位），Claude 客户端与 API Key 配置 UI 留到 Phase 4 一并接入。
+- **原文/译文切换**：阅读区提供"原文/译文"切换；骨架阶段点"翻译"提示"将在配置 Claude API Key 后可用（Phase 4）"。
 
 ### Phase 5 — 求职看板
 Claude 从邮件结构化抽取 公司/投递时间/状态 → 表格视图 + 状态时间线 + 手动校正兜底。

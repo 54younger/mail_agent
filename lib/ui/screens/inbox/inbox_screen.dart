@@ -16,8 +16,10 @@ class InboxScreen extends ConsumerStatefulWidget {
 
 class _InboxScreenState extends ConsumerState<InboxScreen> {
   EmailMessage? _selected;
+  int _page = 0;
 
   static const _splitBreakpoint = 720.0;
+  static const _pageSize = 100;
 
   @override
   Widget build(BuildContext context) {
@@ -42,21 +44,47 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
             return const Center(child: Text('暂无邮件，同步完成后将自动显示'));
           }
 
-          final list = _EmailList(
-            emails: emails,
-            selectedId: _selected?.id,
-            onTap: (e) => setState(() => _selected = e),
+          // Emails are sorted newest-first, so page 0 is the latest 100.
+          final total = emails.length;
+          final pageCount = (total + _pageSize - 1) ~/ _pageSize;
+          final page = _page.clamp(0, pageCount - 1);
+          final start = page * _pageSize;
+          final end = start + _pageSize <= total ? start + _pageSize : total;
+          final pageEmails = emails.sublist(start, end);
+
+          final master = Column(
+            children: [
+              Expanded(
+                child: _EmailList(
+                  emails: pageEmails,
+                  selectedId: _selected?.id,
+                  onTap: (e) => setState(() => _selected = e),
+                ),
+              ),
+              if (pageCount > 1)
+                _Pager(
+                  page: page,
+                  pageCount: pageCount,
+                  total: total,
+                  onPrev:
+                      page > 0 ? () => setState(() => _page = page - 1) : null,
+                  onNext: page < pageCount - 1
+                      ? () => setState(() => _page = page + 1)
+                      : null,
+                ),
+            ],
           );
 
           if (!wide) {
             return _selected == null
-                ? list
-                : EmailDetailView(key: ValueKey(_selected!.id), email: _selected!);
+                ? master
+                : EmailDetailView(
+                    key: ValueKey(_selected!.id), email: _selected!);
           }
 
           return Row(
             children: [
-              SizedBox(width: 360, child: list),
+              SizedBox(width: 360, child: master),
               const VerticalDivider(width: 1),
               Expanded(
                 child: _selected == null
@@ -126,6 +154,51 @@ class _EmailList extends StatelessWidget {
           '${dt.minute.toString().padLeft(2, '0')}';
     }
     return '${dt.month}/${dt.day}';
+  }
+}
+
+class _Pager extends StatelessWidget {
+  const _Pager({
+    required this.page,
+    required this.pageCount,
+    required this.total,
+    required this.onPrev,
+    required this.onNext,
+  });
+
+  final int page;
+  final int pageCount;
+  final int total;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Material(
+      color: cs.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left),
+              onPressed: onPrev,
+              tooltip: '上一页',
+            ),
+            Text('第 ${page + 1} / $pageCount 页 · 共 $total 封',
+                style: tt.labelSmall),
+            IconButton(
+              icon: const Icon(Icons.chevron_right),
+              onPressed: onNext,
+              tooltip: '下一页',
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -248,9 +248,14 @@ class MailSyncService {
 
       if (result.messages.isNotEmpty) {
         final msg = result.messages.first;
-        final body =
-            msg.decodeTextPlainPart() ?? msg.decodeTextHtmlPart() ?? '';
-        email.bodyText = body.length > 20000 ? body.substring(0, 20000) : body;
+        // Prefer HTML so the reading pane can render images/links; fall back to
+        // plain text. Cap is large so HTML isn't truncated mid-tag.
+        final html = msg.decodeTextHtmlPart();
+        final body = (html != null && html.trim().isNotEmpty)
+            ? html
+            : (msg.decodeTextPlainPart() ?? '');
+        const cap = 500000;
+        email.bodyText = body.length > cap ? body.substring(0, cap) : body;
         _store.emails.put(email);
       }
       await client.logout();
