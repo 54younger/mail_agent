@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/imap_error.dart';
 import '../../../data/models/account.dart';
 import '../../../data/objectbox/objectbox_store.dart';
 import '../../../providers/app_providers.dart';
