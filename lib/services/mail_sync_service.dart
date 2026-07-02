@@ -44,6 +44,22 @@ class MailSyncService {
   static const _fetchBatch = 100;
   static const _headersDef = 'UID FLAGS ENVELOPE';
 
+  /// Sent to the server via the IMAP ID command (RFC 2971). NetEase
+  /// (163/126/yeah.net) rejects SELECT with "Unsafe Login ... kefu@188.com"
+  /// unless the client identifies itself this way after login.
+  static const _clientId = Id(name: 'Mail Agent', version: '1.0');
+
+  /// Best-effort client identification. Required by 163 before SELECT; harmless
+  /// for other providers, which either accept or ignore it. Any failure is
+  /// swallowed so a server that rejects ID never breaks the connection.
+  Future<void> _identify(ImapClient client) async {
+    try {
+      await client.id(clientId: _clientId);
+    } on Object {
+      // Non-fatal — providers without ID support simply move on.
+    }
+  }
+
   /// Returns null on success, user-friendly error message on failure.
   /// Calls selectInbox() so provider-level auth blocks
   /// (e.g. 163 "SELECT Unsafe Login") are caught at setup time.
@@ -77,6 +93,7 @@ class MailSyncService {
     try {
       await client.connectToServer(host, port, isSecure: useSsl);
       await client.login(username, password);
+      await _identify(client); // 163 requires ID before SELECT
       await client.selectInbox(); // probes inbox — catches "SELECT Unsafe Login"
       await client.logout();
       return (error: null, kind: ImapErrorKind.unknown);
@@ -106,6 +123,7 @@ class MailSyncService {
         isSecure: account.useSsl,
       );
       await client.login(account.username, password);
+      await _identify(client); // 163 requires ID before SELECT
 
       final select = await client.selectInbox();
       final total = select.messagesExists ?? 0;
@@ -164,6 +182,7 @@ class MailSyncService {
         isSecure: account.useSsl,
       );
       await client.login(account.username, password);
+      await _identify(client); // 163 requires ID before SELECT
       final select = await client.selectInbox();
       final total = select.messagesExists ?? 0;
       if (total == 0) {
@@ -211,6 +230,7 @@ class MailSyncService {
         isSecure: account.useSsl,
       );
       await client.login(account.username, password);
+      await _identify(client); // 163 requires ID before SELECT
       await client.selectInbox();
 
       final seq = MessageSequence.fromId(uid, isUid: true);
