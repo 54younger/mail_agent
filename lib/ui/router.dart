@@ -21,6 +21,11 @@ class AppRoutes {
 final appRouter = RouterConfig<Object>(
   routerDelegate: _AppRouterDelegate(),
   routeInformationParser: _AppRouteParser(),
+  routeInformationProvider: PlatformRouteInformationProvider(
+    initialRouteInformation: RouteInformation(
+      uri: Uri.parse(AppRoutes.setup),
+    ),
+  ),
 );
 
 class _AppRouteParser extends RouteInformationParser<Object> {
