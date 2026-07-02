@@ -1,54 +1,81 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Non-blocking progress indicator shown while the HNSW index is being built.
-/// Displayed at the top of InboxScreen — user can still browse emails.
-/// Phase 3 will wire this to IndexService's progress stream.
-class IndexProgressBar extends StatelessWidget {
+import '../../providers/sync_providers.dart';
+
+/// Shown at the top of InboxScreen while IMAP sync is in progress.
+/// Hides automatically when sync is idle or complete.
+class IndexProgressBar extends ConsumerWidget {
   const IndexProgressBar({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // TODO(phase3): Watch indexProgressProvider; hide when completed.
-    return const SizedBox.shrink();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(syncNotifierProvider);
+    return switch (state) {
+      SyncRunning(:final fetched, :final total, :final fraction) =>
+        _SyncBar(fetched: fetched, total: total, fraction: fraction),
+      SyncFailed(:final message) => _ErrorBanner(message: message),
+      _ => const SizedBox.shrink(),
+    };
   }
 }
 
-/// Visible variant rendered during active indexing.
-class ActiveIndexProgressBar extends StatelessWidget {
-  const ActiveIndexProgressBar({
-    super.key,
+class _SyncBar extends StatelessWidget {
+  const _SyncBar({
+    required this.fetched,
+    required this.total,
     required this.fraction,
-    required this.estimatedSecondsRemaining,
   });
 
+  final int fetched;
+  final int total;
   final double fraction;
-  final int estimatedSecondsRemaining;
 
   @override
   Widget build(BuildContext context) {
-    final minutes = estimatedSecondsRemaining ~/ 60;
-    final seconds = estimatedSecondsRemaining % 60;
-    final timeLabel =
-        minutes > 0 ? '约剩 $minutes 分 $seconds 秒' : '约剩 $seconds 秒';
+    final cs = Theme.of(context).colorScheme;
+    final pct = (fraction * 100).round();
 
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: cs.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '正在同步邮件  $pct%  ($fetched / $total)',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+            const SizedBox(height: 4),
+            LinearProgressIndicator(value: fraction),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
+            Icon(Icons.error_outline, color: cs.onErrorContainer, size: 16),
+            const SizedBox(width: 8),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '智能索引构建中 ${(fraction * 100).toStringAsFixed(0)}% · $timeLabel',
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                  const SizedBox(height: 4),
-                  LinearProgressIndicator(value: fraction),
-                ],
+              child: Text(
+                '同步失败：$message',
+                style: TextStyle(color: cs.onErrorContainer, fontSize: 12),
               ),
             ),
           ],

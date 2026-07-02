@@ -19,7 +19,7 @@ class AppRoutes {
 
 /// Simple router. Phase 2 will upgrade to go_router for deep-linking.
 final appRouter = RouterConfig<Object>(
-  routerDelegate: _AppRouterDelegate(),
+  routerDelegate: AppRouterDelegate(),
   routeInformationParser: _AppRouteParser(),
   routeInformationProvider: PlatformRouteInformationProvider(
     initialRouteInformation: RouteInformation(
@@ -27,6 +27,10 @@ final appRouter = RouterConfig<Object>(
     ),
   ),
 );
+
+/// Convenience accessor used by screens to trigger navigation.
+AppRouterDelegate get appRouterDelegate =>
+    appRouter.routerDelegate as AppRouterDelegate;
 
 class _AppRouteParser extends RouteInformationParser<Object> {
   @override
@@ -38,7 +42,7 @@ class _AppRouteParser extends RouteInformationParser<Object> {
       RouteInformation(uri: Uri.parse(config as String));
 }
 
-class _AppRouterDelegate extends RouterDelegate<Object>
+class AppRouterDelegate extends RouterDelegate<Object>
     with ChangeNotifier, PopNavigatorRouterDelegateMixin<Object> {
   @override
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -75,5 +79,6 @@ class _AppRouterDelegate extends RouterDelegate<Object>
       );
 
   @override
-  Future<void> setNewRoutePath(Object config) async => _route = config as String;
+  Future<void> setNewRoutePath(Object config) async =>
+      _route = config as String;
 }
