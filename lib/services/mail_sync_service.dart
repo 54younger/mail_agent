@@ -46,7 +46,11 @@ class MailSyncService {
   // `message.envelope` and BODY[HEADER] into `message.headers`; _toRow reads
   // both with a fallback chain so metadata is populated whichever path the
   // server/library fills. Headers also let decode* MIME-decode Chinese subjects.
-  static const _headersDef = 'UID ENVELOPE BODY.PEEK[HEADER]';
+  // MUST be a parenthesized list: enough_mail writes this raw after "FETCH
+  // <seq> ", and IMAP requires multi-attribute fetches to be wrapped in "()".
+  // Without the parens the server honours only the first attribute (UID) and
+  // drops ENVELOPE/HEADER — leaving subject/from/date empty.
+  static const _headersDef = '(UID ENVELOPE BODY.PEEK[HEADER])';
 
   /// Sent to the server via the IMAP ID command (RFC 2971). NetEase
   /// (163/126/yeah.net) rejects SELECT with "Unsafe Login ... kefu@188.com"
@@ -237,8 +241,10 @@ class MailSyncService {
       await _identify(client); // 163 requires ID before SELECT
       await client.selectInbox();
 
+      // seq is a UID sequence, so it must go through UID FETCH, not plain
+      // FETCH (which would treat the UID as a sequence number).
       final seq = MessageSequence.fromId(uid, isUid: true);
-      final result = await client.fetchMessages(seq, 'BODY.PEEK[]');
+      final result = await client.uidFetchMessages(seq, '(BODY.PEEK[])');
 
       if (result.messages.isNotEmpty) {
         final msg = result.messages.first;
