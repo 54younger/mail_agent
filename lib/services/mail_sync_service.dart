@@ -1,6 +1,7 @@
 import 'package:enough_mail/enough_mail.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/imap_error.dart';
 import '../core/secure_storage/secure_storage.dart';
 import '../data/models/account.dart';
 import '../data/models/email_message.dart';
@@ -23,8 +24,9 @@ final class SyncDone extends SyncEvent {
 }
 
 final class SyncError extends SyncEvent {
-  SyncError(this.message);
+  SyncError(this.message, [this.kind = ImapErrorKind.unknown]);
   final String message;
+  final ImapErrorKind kind;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -42,8 +44,29 @@ class MailSyncService {
   static const _fetchBatch = 100;
   static const _headersDef = 'UID FLAGS ENVELOPE';
 
-  /// Returns null on success, error message on failure.
+  /// Returns null on success, user-friendly error message on failure.
+  /// Calls selectInbox() so provider-level auth blocks
+  /// (e.g. 163 "SELECT Unsafe Login") are caught at setup time.
   Future<String?> testConnection({
+    required String host,
+    required int port,
+    required bool useSsl,
+    required String username,
+    required String password,
+  }) async {
+    final r = await testConnectionWithKind(
+      host: host,
+      port: port,
+      useSsl: useSsl,
+      username: username,
+      password: password,
+    );
+    return r.error;
+  }
+
+  /// Like [testConnection] but also returns the [ImapErrorKind] so the
+  /// setup screen can show provider-specific hints.
+  Future<({String? error, ImapErrorKind kind})> testConnectionWithKind({
     required String host,
     required int port,
     required bool useSsl,
@@ -54,10 +77,12 @@ class MailSyncService {
     try {
       await client.connectToServer(host, port, isSecure: useSsl);
       await client.login(username, password);
+      await client.selectInbox(); // probes inbox — catches "SELECT Unsafe Login"
       await client.logout();
-      return null;
+      return (error: null, kind: ImapErrorKind.unknown);
     } catch (e) {
-      return e.toString();
+      final kind = classifyImapError(e);
+      return (error: kind.userMessage, kind: kind);
     } finally {
       await client.disconnect();
     }
@@ -69,7 +94,7 @@ class MailSyncService {
   Stream<SyncEvent> _initialSync(Account account) async* {
     final password = await _secureStorage.read(key: account.credentialKey);
     if (password == null || password.isEmpty) {
-      yield SyncError('找不到密码，请重新绑定账号');
+      yield SyncError('找不到密码，请重新绑定账号', ImapErrorKind.authFailed);
       return;
     }
 
@@ -94,7 +119,6 @@ class MailSyncService {
       account.uidValidity = select.uidValidity ?? 0;
 
       int fetched = 0;
-      // Fetch newest first: sequence numbers run 1…total.
       for (int high = total; high >= 1; high -= _fetchBatch) {
         final low = (high - _fetchBatch + 1).clamp(1, total);
         final seq = MessageSequence.fromRange(low, high);
@@ -113,7 +137,8 @@ class MailSyncService {
       await client.logout();
       yield SyncDone(total);
     } catch (e) {
-      yield SyncError(e.toString());
+      final kind = classifyImapError(e);
+      yield SyncError(kind.userMessage, kind);
     } finally {
       await client.disconnect();
     }

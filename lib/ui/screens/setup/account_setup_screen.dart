@@ -48,12 +48,13 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
   bool _passwordVisible = false;
   _TestStatus _testStatus = _TestStatus.idle;
   String _testError = '';
+  String _testHint = '';
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    // If account already exists, skip straight to inbox.
+    // If account already exists (e.g. app restart), skip straight to inbox.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final store = ref.read(objectBoxStoreProvider);
       if (store.accounts.getAll().isNotEmpty) {
@@ -77,7 +78,15 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
       _portCtrl.text = p.port.toString();
       _useSsl = p.useSsl;
       _testStatus = _TestStatus.idle;
+      _testError = '';
+      _testHint = '';
     });
+  }
+
+  void _clearTestResult() {
+    _testStatus = _TestStatus.idle;
+    _testError = '';
+    _testHint = '';
   }
 
   Future<void> _testConnection() async {
@@ -85,20 +94,27 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
     setState(() {
       _testStatus = _TestStatus.testing;
       _testError = '';
+      _testHint = '';
     });
 
-    final error = await ref.read(mailSyncServiceProvider).testConnection(
-          host: _hostCtrl.text.trim(),
-          port: int.tryParse(_portCtrl.text.trim()) ?? 993,
-          useSsl: _useSsl,
-          username: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text,
-        );
+    final result =
+        await ref.read(mailSyncServiceProvider).testConnectionWithKind(
+              host: _hostCtrl.text.trim(),
+              port: int.tryParse(_portCtrl.text.trim()) ?? 993,
+              useSsl: _useSsl,
+              username: _emailCtrl.text.trim(),
+              password: _passwordCtrl.text,
+            );
 
     if (!mounted) return;
     setState(() {
-      _testStatus = error == null ? _TestStatus.success : _TestStatus.failure;
-      _testError = error ?? '';
+      if (result.error == null) {
+        _testStatus = _TestStatus.success;
+      } else {
+        _testStatus = _TestStatus.failure;
+        _testError = result.error!;
+        _testHint = result.kind.hint;
+      }
     });
   }
 
@@ -160,8 +176,8 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                   const SizedBox(height: 4),
                   Text(
                     '连接您的 IMAP 邮箱以开始使用',
-                    style:
-                        tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                    style: tt.bodyMedium
+                        ?.copyWith(color: cs.onSurfaceVariant),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
@@ -169,8 +185,8 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                   // Provider chips
                   Text(
                     '快速选择',
-                    style:
-                        tt.labelMedium?.copyWith(color: cs.onSurfaceVariant),
+                    style: tt.labelMedium
+                        ?.copyWith(color: cs.onSurfaceVariant),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -187,7 +203,7 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Email field
+                  // Email
                   TextFormField(
                     controller: _emailCtrl,
                     decoration: const InputDecoration(
@@ -196,8 +212,7 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.emailAddress,
-                    onChanged: (_) =>
-                        setState(() => _testStatus = _TestStatus.idle),
+                    onChanged: (_) => setState(_clearTestResult),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return '请输入邮箱地址';
                       if (!v.contains('@')) return '请输入有效的邮箱地址';
@@ -206,7 +221,7 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Password field
+                  // Password
                   TextFormField(
                     controller: _passwordCtrl,
                     obscureText: !_passwordVisible,
@@ -225,8 +240,7 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                         ),
                       ),
                     ),
-                    onChanged: (_) =>
-                        setState(() => _testStatus = _TestStatus.idle),
+                    onChanged: (_) => setState(_clearTestResult),
                     validator: (v) {
                       if (v == null || v.isEmpty) return '请输入密码或授权码';
                       return null;
@@ -234,11 +248,11 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Server section
+                  // Server
                   Text(
                     'IMAP 服务器',
-                    style:
-                        tt.labelMedium?.copyWith(color: cs.onSurfaceVariant),
+                    style: tt.labelMedium
+                        ?.copyWith(color: cs.onSurfaceVariant),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -252,8 +266,7 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                             labelText: '服务器地址',
                             border: OutlineInputBorder(),
                           ),
-                          onChanged: (_) =>
-                              setState(() => _testStatus = _TestStatus.idle),
+                          onChanged: (_) => setState(_clearTestResult),
                           validator: (v) {
                             if (v == null || v.trim().isEmpty) {
                               return '请输入服务器地址';
@@ -298,7 +311,7 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Test connection
+                  // Test connection button
                   FilledButton.tonal(
                     onPressed: _testStatus == _TestStatus.testing
                         ? null
@@ -307,12 +320,12 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Text('测试连接'),
                   ),
 
+                  // Success feedback
                   if (_testStatus == _TestStatus.success) ...[
                     const SizedBox(height: 12),
                     Row(
@@ -322,12 +335,13 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                         const SizedBox(width: 8),
                         Text(
                           '连接成功',
-                          style:
-                              tt.bodyMedium?.copyWith(color: cs.primary),
+                          style: tt.bodyMedium?.copyWith(color: cs.primary),
                         ),
                       ],
                     ),
                   ],
+
+                  // Failure feedback: title + expandable hint box
                   if (_testStatus == _TestStatus.failure) ...[
                     const SizedBox(height: 12),
                     Row(
@@ -339,12 +353,26 @@ class _AccountSetupScreenState extends ConsumerState<AccountSetupScreen> {
                         Expanded(
                           child: Text(
                             _testError,
-                            style: tt.bodySmall
-                                ?.copyWith(color: cs.error),
+                            style: tt.bodySmall?.copyWith(color: cs.error),
                           ),
                         ),
                       ],
                     ),
+                    if (_testHint.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: cs.errorContainer.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _testHint,
+                          style: tt.labelSmall
+                              ?.copyWith(color: cs.onErrorContainer),
+                        ),
+                      ),
+                    ],
                   ],
 
                   // Save & sync (only after successful test)
