@@ -42,10 +42,11 @@ class MailSyncService {
   final SecureStorage _secureStorage;
 
   static const _fetchBatch = 100;
-  // Fetch the header fields (not ENVELOPE) so enough_mail's decode* getters can
-  // MIME-decode encoded-word subjects (e.g. Chinese) and parse From/To/Date.
-  static const _headersDef =
-      'UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)]';
+  // Fetch ENVELOPE *and* the full header block. enough_mail parses ENVELOPE into
+  // `message.envelope` and BODY[HEADER] into `message.headers`; _toRow reads
+  // both with a fallback chain so metadata is populated whichever path the
+  // server/library fills. Headers also let decode* MIME-decode Chinese subjects.
+  static const _headersDef = 'UID ENVELOPE BODY.PEEK[HEADER]';
 
   /// Sent to the server via the IMAP ID command (RFC 2971). NetEase
   /// (163/126/yeah.net) rejects SELECT with "Unsafe Login ... kefu@188.com"
@@ -269,13 +270,22 @@ class MailSyncService {
   }
 
   EmailMessage _toRow(MimeMessage msg, String folder) {
+    final env = msg.envelope;
+    final from = msg.fromEmail ??
+        msg.from?.firstOrNull?.email ??
+        env?.from?.firstOrNull?.email ??
+        '';
+    final to = (msg.to ?? env?.to)?.map((a) => a.email).join(',') ?? '';
+    final subject = msg.decodeSubject() ?? env?.subject ?? '';
+    final date = msg.decodeDate() ?? env?.date ?? DateTime.now();
+
     return EmailMessage()
       ..uid = (msg.uid ?? 0).toString()
       ..folder = folder
-      ..fromAddress = msg.fromEmail ?? msg.from?.firstOrNull?.email ?? ''
-      ..toAddresses = msg.to?.map((a) => a.email).join(',') ?? ''
-      ..subject = msg.decodeSubject() ?? ''
-      ..date = msg.decodeDate() ?? DateTime.now()
+      ..fromAddress = from
+      ..toAddresses = to
+      ..subject = subject
+      ..date = date
       ..bodyText = ''
       ..isIndexed = false;
   }

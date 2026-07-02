@@ -41,6 +41,13 @@ class SettingsScreen extends ConsumerWidget {
                   .syncAccount(account),
             ),
             ListTile(
+              leading: const Icon(Icons.sync_problem),
+              title: const Text('重新同步全部邮件'),
+              subtitle: const Text('重新拉取所有邮件头，修复标题/发件人/日期缺失'),
+              onTap: () =>
+                  ref.read(syncNotifierProvider.notifier).fullResync(),
+            ),
+            ListTile(
               leading: const Icon(Icons.swap_horiz),
               title: const Text('重新绑定邮箱'),
               subtitle: const Text('删除当前账户并重新配置'),

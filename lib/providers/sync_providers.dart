@@ -76,6 +76,17 @@ class SyncNotifier extends Notifier<SyncState> {
     if (_lastAccount case final a?) await startInitialSync(a);
   }
 
+  /// Re-fetches ALL headers (not just the newest batch) and upserts them by
+  /// UID, repairing any locally cached rows that were stored with incomplete
+  /// metadata. Falls back to the stored account when there is no active one.
+  Future<void> fullResync() async {
+    final store = ref.read(objectBoxStoreProvider);
+    final all = store.accounts.getAll();
+    final account = _lastAccount ?? (all.isEmpty ? null : all.first);
+    if (account == null) return;
+    await startInitialSync(account);
+  }
+
   /// Deletes the current account and its stored credential so the setup
   /// screen can start fresh. Navigation is the caller's responsibility
   /// (avoids a circular import between providers and the UI router).
