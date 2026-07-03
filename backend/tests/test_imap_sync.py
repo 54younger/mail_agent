@@ -45,6 +45,32 @@ def test_send_id_is_non_fatal():
     imap_sync._send_id(BadClient())
 
 
+def test_imaplib_knows_id_command():
+    # Importing imap_sync must register the RFC 2971 ID command in imaplib, else
+    # _simple_command("ID", ...) raises KeyError and never sends (163 blocks).
+    import imaplib
+
+    assert "ID" in imaplib.Commands
+    assert "AUTH" in imaplib.Commands["ID"]
+
+
+def test_send_id_transmits_the_id_command():
+    class RecordingClient:
+        def __init__(self):
+            self.sent = None
+
+        def _simple_command(self, name, arg):
+            self.sent = (name, arg)
+            return ("OK", [b""])
+
+        def _untagged_response(self, typ, dat, name):
+            return (typ, [])
+
+    client = RecordingClient()
+    imap_sync._send_id(client)
+    assert client.sent == ("ID", '("name" "Mail Agent" "version" "1.0")')
+
+
 @pytest.mark.parametrize("full,limit,total,expected_want", [(True, 100, 5, 5), (False, 3, 5, 3)])
 def test_fetch_headers_limits(monkeypatch, full, limit, total, expected_want):
     """fetch_headers should request `total` when full, else `min(limit, total)`."""

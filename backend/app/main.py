@@ -7,6 +7,7 @@ is served as static files from the same origin (no CORS needed in prod).
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -29,11 +30,24 @@ _DEV_ORIGINS = [
 _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
+_log = logging.getLogger("mail_agent")
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    # Only touch the DB once the user has completed first-run setup.
+    # Only touch the DB once the user has completed first-run setup. If the
+    # recorded data folder is unusable (deleted, unmounted drive, stale path),
+    # don't crash startup — forget it and fall back to first-run setup.
     if config.is_configured():
-        await db.init_db()
+        try:
+            await db.init_db()
+        except Exception:
+            _log.warning(
+                "Configured data folder is unusable; resetting to first-run setup.",
+                exc_info=True,
+            )
+            config.clear_data_dir()
+            await db.reset_engine()
     yield
 
 

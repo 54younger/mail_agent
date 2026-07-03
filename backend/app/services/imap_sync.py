@@ -15,6 +15,7 @@ Ported quirks from the Flutter app:
 
 from __future__ import annotations
 
+import imaplib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
@@ -22,6 +23,13 @@ from typing import Callable
 from imap_tools import AND, MailBox, MailBoxUnencrypted
 
 from ..core.errors import ImapErrorInfo, classify_imap_error, error_info
+
+# Python's stdlib imaplib does NOT know the RFC 2971 ID command, so
+# ``_simple_command("ID", ...)`` raises KeyError (Commands["ID"]) and never sends
+# anything. Register it here (valid before/after auth) so we can actually
+# transmit ID — 163/126/yeah.net reject SELECT with "Unsafe Login" without it.
+if "ID" not in imaplib.Commands:
+    imaplib.Commands["ID"] = ("NONAUTH", "AUTH", "SELECTED")
 
 # Sent via the IMAP ID command. 163 requires this before SELECT.
 _CLIENT_ID = {"name": "Mail Agent", "version": "1.0"}

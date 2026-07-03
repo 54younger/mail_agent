@@ -40,5 +40,14 @@ def test_windows_forward_slash_path_maps_too(monkeypatch):
     assert str(p) == "/mnt/d/data/mail"
 
 
+def test_ensure_data_dir_creates_missing_folder(tmp_path, monkeypatch):
+    target = tmp_path / "nested" / "data"
+    monkeypatch.setenv("MAIL_AGENT_DATA_DIR", str(target))
+    assert not target.exists()
+    created = config.ensure_data_dir()
+    assert created == target
+    assert target.is_dir()
+
+
 def _raise(*_a, **_k):
     raise OSError("wslpath not available")

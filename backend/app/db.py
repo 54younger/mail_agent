@@ -61,6 +61,8 @@ async def init_db() -> None:
     them on ``Base.metadata`` as a side effect."""
     from . import models  # noqa: F401  (registers mappers)
 
+    # SQLite won't create missing parent dirs — ensure the data folder exists.
+    config.ensure_data_dir()
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

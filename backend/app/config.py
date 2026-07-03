@@ -175,3 +175,29 @@ def save_settings(values: dict[str, object]) -> dict[str, object]:
         json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return merged
+
+
+def ensure_data_dir() -> Path:
+    """Return the configured data folder, creating it if missing.
+
+    SQLite will not create missing parent directories, so callers must ensure the
+    folder exists before opening the DB. Raises if the folder can't be created
+    (e.g. an unmounted drive), which the startup path treats as "reset to setup".
+    """
+    data_dir = get_data_dir()
+    if data_dir is None:
+        raise RuntimeError("数据文件夹尚未配置，请先完成初始化设置。")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+def clear_data_dir() -> None:
+    """Forget the recorded data folder (drop the bootstrap pointer) so the app
+    returns to first-run setup. Used to recover from a stale/unusable path.
+    No-op when the data dir is pinned via the env override."""
+    if os.environ.get(_ENV_DATA_DIR):
+        return
+    try:
+        _bootstrap_config_path().unlink()
+    except FileNotFoundError:
+        pass
