@@ -1,164 +1,100 @@
-# 邮件管理系统 · 完整实现计划
+# Mail Agent · 实现计划（Web 重构版）
 
-## 一、项目概述
+## 一、方向
 
-一个 AI 驱动的邮件管理桌面应用，Windows 优先、未来上架 iOS。核心能力：绑定邮箱后自动收信 → AI 自动分类并归档 → 自然语言语义检索 → 求职投递看板。技术上以一套 **Flutter/Dart** 代码同时覆盖桌面与移动端。
+一个**自托管、可分发**的求职邮件助手：绑定邮箱（IMAP）→ 浏览/阅读邮件 → 按需 AI 翻译
+→ Claude 从邮件抽取投递记录，汇成**求职看板（Kanban）**。
 
----
+由原 Flutter/Dart 桌面应用重构为 **前后端分离的 Web 应用**：**React 前端 + Python
+(FastAPI) 后端**。原 Flutter 代码归档于 `legacy/`。
 
-## 二、已锁定的决策
+### 已锁定决策
+1. **运行方式 = 自托管单用户、可分发。** 每个用户运行自己的后端；首次启动选择一个**数据
+   文件夹**存放各自的 SQLite 数据库。无注册/登录、无中心服务器。后端仅绑定 `127.0.0.1`。
+2. **舍弃** AI 语义搜索 + AI 文件夹分类（连同 ONNX/embedding/模型目录/HNSW 向量、
+   `Category`/`IndexProgress`/`ModelState`）。
+3. **保留** AI 翻译（按需，非英语 → 目标语言，默认英语）。
+4. **全力投入求职看板**：Claude 抽取 公司/投递时间/状态。
+5. **MVP 界面 = 求职看板 + 邮件浏览 + 翻译。** 收件箱是数据来源与佐证，看板为核心主界面。
+6. **凭据安全**：IMAP 密码 + Claude Key 存 OS keyring，绝不明文落盘/入库/进 git。
 
-| 维度 | 选择 |
-|------|------|
-| 技术栈 | **Flutter + Dart**（Windows 优先，iOS 复用同一套代码；**全程不用 Python**） |
-| AI 策略 | **可切换的混合模式**：本地 embedding ⇄ 云端 API，用户可选 |
-| 本地模型 | **模型目录**：快速/均衡/强力三档，按机器性能推荐、可手动切换 |
-| 邮箱 | **通用 IMAP** 起步 |
-| MVP | **AI 分类 + 语义搜索** 先扎实，求职看板作为其上的特化视图后加 |
+## 二、技术栈
 
----
+| 层 | 选型 |
+|----|------|
+| 前端 | Vite + React + TypeScript + Tailwind + React Router + TanStack Query |
+| 后端 | FastAPI + Uvicorn（异步） |
+| 存储 | SQLite（数据文件夹内）+ SQLAlchemy 2.0 async（aiosqlite）+ Alembic |
+| 邮件 | `imap-tools`（高层解析 envelope/主题/日期/发件人，规避原始 FETCH 陷阱）；`ID` 命令在 SELECT 前发送 |
+| LLM | `anthropic` SDK，Claude Haiku（翻译 + 抽取共用一套客户端与 Key） |
+| 语言检测 | `lingua`（或由 Claude 检测），源语言==目标语言则跳过翻译 |
+| 密钥 | `keyring`（OS 钥匙串），回退：口令加密文件（无头/服务器场景） |
 
-## 三、技术栈
+安全基线：后端仅绑 `127.0.0.1`；CORS 白名单=本地前端源；ORM 参数化查询；Pydantic 校验；
+HTML 正文渲染前用 DOMPurify 消毒。
 
-| 层 | 选型 | 理由 |
-|----|------|------|
-| UI / 状态 | Flutter + **Riverpod** | 跨平台、声明式、易测 |
-| 邮件协议 | **`enough_mail`** | 成熟 Dart IMAP/SMTP 库，支持授权码/OAuth |
-| 存储 + 向量 | **ObjectBox**（自带端上 HNSW 向量搜索） | 纯 Dart，Windows/iOS 原生，关系数据与向量一处搞定 |
-| 本地 embedding | **ONNX Runtime**（iOS 官方支持，走 CoreML/CPU）+ 多语言模型 | 中英混杂邮件需多语言；桌面与 iOS 双端可跑 |
-| 云端 embedding | 云端 embedding API（备选路径） | 端上不理想或用户选"纯云端"时切换 |
-| 云端 LLM | **Claude Haiku**（结构化输出/tool use） | 分类与信息抽取，便宜可靠 |
-| 凭据安全 | 平台安全存储（Windows Credential Manager / iOS Keychain） | 加密保存邮箱凭据 |
+## 三、目录结构
 
----
-
-## 四、系统架构
-
-### 4.1 分层
 ```
-UI 层 (Flutter Widgets + Riverpod)
-  ├─ 收件箱/阅读  ├─ 分类管理  ├─ 语义搜索  ├─ 求职看板  ├─ 设置
-──────────────────────────────────────────────────────────
-应用/服务层
-  ├─ MailSyncService     (IMAP 收取 + 增量同步)
-  ├─ IndexService        (embedding 管线, 后台 Isolate, 可恢复)
-  ├─ SearchService       (向量检索 Top-N)
-  ├─ ClassifyService     (Claude 分类 + 规则归档)
-  ├─ JobTrackerService   (Claude 抽取 公司/时间/状态)
-  └─ ModelManager        (模型下载/校验/切换/测速)
-──────────────────────────────────────────────────────────
-Provider 抽象层
-  EmbeddingProvider ─┬─ LocalOnnxProvider(modelSpec)
-                     └─ CloudApiProvider
-──────────────────────────────────────────────────────────
-数据层 (ObjectBox: Account/Email/Category/JobApplication/IndexProgress/ModelState)
-平台抽象层 (安全存储、文件路径、性能探测 —— 为 iOS 预留差异隔离)
+mail_agent/
+├── legacy/     归档的 Flutter 桌面应用（仅参考）
+├── backend/    FastAPI（app/{main,config,db,core,models,schemas,services,api}）
+└── frontend/   Vite React（src/{app,api,features/{board,inbox,settings,setup},components}）
 ```
 
-### 4.2 Embedding 三层灵活度
-```
-本地 vs 云端 (EmbeddingProvider)
-   └─ 本地时: 模型目录 ModelCatalog
-        • 快速档  multilingual-e5-small (384维,~120MB)  低配/手机
-        • 均衡档  multilingual-e5-base  (768维,~280MB)
-        • 强力档  bge-m3 / e5-large     (1024维,~560MB) 仅桌面
-   └─ 按机器性能(CPU/内存/平台)自动推荐 + 手动覆盖
-```
-- **按需下载**：模型不塞进安装包，选后再下（显示体积/进度/checksum 校验/断点续传）。
-- **平台过滤**：iOS 只暴露快速/均衡档，强力档标"仅桌面"。
-- **换模型 = 重建索引**：不同模型维度不兼容；每条向量记录其来源模型，切换时复用"后台+进度条+可恢复"体验重建，UI 明确提示预计耗时与逐步恢复。
+## 四、分阶段计划
 
----
+### Phase 0 — 重构 + 骨架 ✅（已完成）
+- Flutter 应用 `git mv` 至 `legacy/`；根 `.gitignore`/`README.md`/`PLAN.md` 更新。
+- 后端骨架：FastAPI + CORS + 可选静态前端；`config.py`（数据文件夹解析 + settings.json）；
+  `db.py`（异步 SQLite 引擎/会话）；`core/errors.py`（**移植** imap_error.dart 错误分类，含
+  中文提示，已单测 15 项通过）；`/api/health`。
+- 前端骨架：React 外壳（求职看板/收件箱/设置导航）+ 首次运行数据文件夹引导 + API 客户端
+  + 健康检查网关；`pnpm build` 通过。
 
-## 五、数据模型（ObjectBox 实体）
+### Phase 1 — 数据文件夹 + IMAP 绑定 + 同步 + 收件箱
+- **首次运行**：`POST /api/setup/data-folder` 设定文件夹 → 建 SQLite + settings.json。
+- **模型**（SQLAlchemy）：`Account`、`EmailMessage`（去除 embedding/embeddingModelId/
+  categoryId；新增 `translated_text`/`detected_lang`）、`JobApplication`。
+- **绑定向导**（host/port/ssl/username/授权码）→ `imap_sync.test_connection`
+  （connect → login → **ID** → SELECT INBOX → logout）+ 移植的 `ImapErrorKind` 分类与提示。
+  重新绑定 = 删账户 + 删 keyring 条目。
+- **同步**（`imap-tools`）：初次全量邮件头（最新优先）+ 增量刷新（最新 100），**按 UID
+  upsert** 不重复；`POST /api/sync` + 进度（SSE 或轮询）。
+- **邮件**：`GET /api/emails?page=&size=100`（分页，最新优先）；`GET /api/emails/{id}`
+  懒加载正文（`BODY.PEEK[]`，优先 HTML）并缓存。
+- **收件箱 UI**：分页列表 + 主从阅读面板；DOMPurify 消毒 HTML 正文；远程图片处理。
 
-- **Account**：IMAP 服务器/端口/TLS、用户名、加密凭据引用。
-- **Email**：uid、folder、from/to、subject、body、date、`isIndexed`、`categoryId`、`embedding`(HNSW)、`embeddingModelId`。
-- **Category**：名称、颜色、目标归档文件夹、可选 AI 提示词。
-- **JobApplication**：company、appliedAt、status（已投递/笔试/面试/Offer/拒信）、emailId、`manuallyEdited` 标志、状态时间线。
-- **IndexProgress**：total/done/status，断点续跑。
-- **ModelState**：当前所用模型、已下载模型列表、维度。
+### Phase 2 — 翻译（真正接入 Claude，按需）
+- **设置**：Claude API Key（→ keyring）+ 翻译目标语言（默认 `en`；zh/ja/ko/fr/de/es）。
+- `POST /api/emails/{id}/translate`：检测源语言；源==目标则返回原文；否则 Claude Haiku 翻译；
+  **缓存** `translated_text` + `detected_lang` 于该行，避免重复调用。
+- 阅读面板：「翻译为<语言>」按钮 → 原文/译文切换。
 
----
+### Phase 3 — 求职看板（核心）
+- **模型** `JobApplication`：company、appliedAt、statusCode（applied=0/onlineTest=1/
+  interview=2/offer=3/rejected=4/unknown=99）、emailId、manuallyEdited、timelineJson。
+- **抽取**（`job_extractor.py`）：Claude Haiku **tool_use / 结构化输出** 遍历候选邮件 →
+  公司/投递时间/状态；upsert；`manuallyEdited=true` 的行不被覆盖。端点
+  `POST /api/jobs/extract`、`GET /api/jobs`。
+- **看板 UI**（主界面）：按状态分列（**语义色**）；卡片（公司/时间/状态）链接到**源邮件+
+  译文**；状态时间线；拖拽改状态（→ `PATCH /api/jobs/{id}` 置 `manuallyEdited=true`，
+  追加时间线）；手动新增/编辑兜底。遵循设计质量规则——刻意的层级/节奏/动效，非模板看板。
 
-## 六、分阶段计划
+### Phase 4 — 打包与分发
+- 一键运行（Uvicorn 提供已构建前端静态文件，单源无 CORS）+ Docker Compose；首次运行文件夹
+  选择 + 配置持久化。面向其他用户的 README（前置条件、Claude Key、IMAP 授权码、本地 DB 文件夹）。
 
-### Phase 0 — 项目骨架
-Flutter 工程初始化、Riverpod、ObjectBox schema、平台安全存储封装、平台抽象层（为 iOS 预留）、目录结构与依赖。
+## 五、相对旧计划的删减
+移除：ONNX/embedding provider、模型目录/下载/校验、HNSW 向量 + 语义搜索、Claude 文件夹分类
++ `Category`、`IndexProgress`、`ModelState`。`EmailMessage` 去掉 `embedding`/
+`embeddingModelId`/`categoryId`，新增 `translated_text`/`detected_lang`。
 
-### Phase 1 — IMAP 绑定与收取
-首屏绑定向导（服务器/授权码引导，含 Gmail/QQ/163 常见提示）→ `enough_mail` 全量拉取 + 增量同步 + 凭据加密保存。
-
-### Phase 2 — 邮件浏览 UI（秒级可用，不依赖 AI）
-邮件列表 / 详情阅读 / 文件夹导航。绑定后立即可浏览可读信。
-- **列表分页**：每页默认最新 100 条，支持上一页/下一页（已实现，`inbox_screen.dart`）。
-- **HTML 正文渲染**：优先取 HTML 正文，用 `flutter_widget_from_html_core` 渲染，远程 `<img>` 图片内联显示（已实现）。
-  - 待办：内嵌 `cid:` 图片（需拉取 multipart 附件并建 cid→bytes 映射）；远程图片"是否自动加载"隐私开关。
-
-### Phase 3 — 本地 Embedding + 语义搜索 ⭐MVP 核心
-0. **正文清洗（embedding 前置）**：embedding 只针对可读文本 —— 先剥离 HTML 标签、图片 URL 与超链接 URL（`<img src>`、`href` 链接、`http(s)://…` 图片/追踪像素地址一律不进入向量）。仅保留人类可读正文 + 主题 + 发件人用于向量化，避免链接噪声污染语义检索。
-1. **Provider 抽象** + **模型目录 + 下载管理 + 性能推荐**。
-2. **ONNX 双端验证**（本阶段第一技术验证点；不过则默认走云端）。
-3. **索引管线**：后台 Isolate、分批、优先级队列（最近优先+疑似求职优先）、可恢复。
-4. **语义搜索**：自然语言 → 向量检索 Top-N，已索引子集即时可用。
-
-### Phase 4 — AI 分类与自动归档 ⭐MVP 核心
-用户自定义类别 → Claude Haiku 打标（结构化输出）→ 规则落文件夹 → 结果可人工纠正、缓存复用。
-
-### Phase 4.5 — 邮件翻译（自动外语→目标语言）
-自动检测非目标语言的邮件并翻译；**默认目标语言 = 英语**，用户可在设置改为中文或其他语言。
-- **触发**：正文渲染时若检测到源语言 ≠ 目标语言，展示"翻译"入口/自动翻译（自动 vs 按需待定，见下）。
-- **引擎**：走 **Claude**（与 ClassifyService 复用同一 Claude 客户端与 API Key 管理）。
-  - 依赖（当前均为占位/未实现）：① Claude HTTP 客户端；② 设置里的 **Claude API Key 配置 UI**（现仅有 `secureStorageKeyClaudeApiKey` 存储位）。翻译落地需先补齐这两项（与 Phase 4 重叠）。
-- **缓存**：翻译结果与检测到的源语言随邮件缓存，避免重复调用（需给 `EmailMessage` 加 `translatedText` / `detectedLang` 字段 → build_runner 重生成）。
-- **已定决策**：① 引擎 = Claude；② 触发 = **按需**（每封一个"翻译"按钮）；③ 目标语言设置放"设置"页，默认英语。
-- **落地节奏**：**先做 UI 骨架**（翻译按钮 + 目标语言设置 + 原文/译文切换 + `TranslationService` 占位），Claude 客户端与 API Key 配置 UI 留到 Phase 4 一并接入。
-- **原文/译文切换**：阅读区提供"原文/译文"切换；骨架阶段点"翻译"提示"将在配置 Claude API Key 后可用（Phase 4）"。
-
-### Phase 5 — 求职看板
-Claude 从邮件结构化抽取 公司/投递时间/状态 → 表格视图 + 状态时间线 + 手动校正兜底。
-
-### Phase 6 — 打磨与 iOS 预研
-平台差异抽象收口、性能与体验打磨、iOS 构建预研。
-
----
-
-## 七、设置模块（AI 引擎设置）
-
-- 本地 ⇄ 云端切换；
-- 本地时选模型档位（快速/均衡/强力），显示推荐与"仅桌面"标记；
-- 显示当前索引所用模型；切换触发重建索引并提示耗时；
-- 模型下载管理（体积/进度/删除）。
-
----
-
-## 八、Embedding 初始化 HCI
-
-1. **秒级**：列表/阅读不等 embedding，绑定后立即可用。
-2. **后台 Isolate**：ONNX 推理不卡 UI，分批（如每批 32 封）。
-3. **优先级队列**：最近优先 + 疑似求职优先。
-4. **非阻塞进度**：顶部"智能索引构建中 62% · 约剩 3 分钟"，可折叠/后台。
-5. **渐进可用**：搜索在已索引子集即时可用，标注"结果随进度增多"。
-6. **可恢复 + 增量**：断点续跑；首建后仅索引新邮件；换模型走同一套重建体验。
-
----
-
-## 九、风险登记
-
-| 级别 | 风险 | 缓解 |
-|------|------|------|
-| HIGH | ONNX 多语言模型 iOS 双端跑通 + 体积 | Phase 3 首步验证；不过则默认云端（Provider 已抽象） |
-| HIGH | 各邮箱 IMAP/授权差异 | 绑定向导给清晰引导 |
-| MEDIUM | 换模型维度不兼容 → 重建索引一致性 | 记录来源模型 + 复用可恢复索引管线 |
-| MEDIUM | 模型下载/校验健壮性 | 断点续传 + checksum + 失败回退 |
-| MEDIUM | 求职状态识别准确率 | AI 抽取 + 人工可改兜底 |
-| MEDIUM | tokenizer 端上化（ONNX 集成最易踩坑处） | Phase 3 验证时一并解决 |
-
----
-
-## 十、待定 / 后续讨论
-
-- embedding 模型目录的最终具体选型（默认：快速档 `multilingual-e5-small`）
-- 云端 LLM 默认 Claude Haiku，是否提供其他 provider
-- 是否加入"自动测速跑分"而非仅看硬件参数来推荐模型档位
-- iOS 上架相关的证书/发布流程（Phase 6 预研）
+## 六、验证
+- **后端**：`pytest`（错误分类 parity、imap_sync 的 upsert-by-uid 与 ID-before-SELECT、
+  翻译 skip-if-target 与缓存、job_extractor upsert 与 manuallyEdited 守卫）；`/api/health`
+  与真实 163/Gmail 账户联调，确认主题/发件人/**真实日期**与正文加载。
+- **前端**：`pnpm build` 通过；Playwright 冒烟（首次文件夹 → 绑定 → 同步进度 → 分页 100/页
+  → 打开邮件 → 翻译切换 → 看板显示抽取记录 → 拖拽改状态并追加时间线）。
+- **分发**：另一台机器全新克隆、选新数据文件夹，验证隔离的本地 DB 且完全可用。
+- **安全**：grep 数据文件夹与 git 无明文密码/Key（仅 keyring）；确认后端默认拒绝非本地绑定。

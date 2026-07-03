@@ -1,0 +1,15 @@
+# Run the whole app (built frontend served by FastAPI) as one local container.
+# Data + encrypted secrets live in the named volume. Bound to localhost only.
+
+services:
+  mailagent:
+    build: .
+    container_name: mailagent
+    ports:
+      - '127.0.0.1:8765:8765'
+    volumes:
+      - mailagent-data:/data
+    restart: unless-stopped
+
+volumes:
+  mailagent-data:
