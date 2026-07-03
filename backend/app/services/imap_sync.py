@@ -74,6 +74,21 @@ def _open(
     return box
 
 
+def _selected_uidvalidity(box) -> int:
+    """Read UIDVALIDITY from the SELECT response (untagged), avoiding a separate
+    STATUS command. Non-critical — returns 0 if unavailable."""
+    try:
+        resp = box.client.untagged_responses.get("UIDVALIDITY")
+        if resp:
+            val = resp[0]
+            if isinstance(val, bytes):
+                val = val.decode()
+            return int(val)
+    except Exception:
+        pass
+    return 0
+
+
 def _coerce_utc(dt: datetime | None) -> datetime:
     if dt is None:
         return datetime.now(timezone.utc)
@@ -137,9 +152,13 @@ def fetch_headers(
     box = None
     try:
         box = _open(host, port, use_ssl, username, password)
-        status = box.folder.status("INBOX", options=["MESSAGES", "UIDVALIDITY"])
-        total = int(status.get("MESSAGES", 0))
-        uidvalidity = int(status.get("UIDVALIDITY", 0))
+        # Count via UID SEARCH ALL, NOT the STATUS command: RFC 3501 says STATUS
+        # should not be used on the *selected* mailbox, and 163/NetEase rejects it
+        # with a NO response — which surfaced as the generic "同步失败". uids()
+        # issues `UID SEARCH ALL`, which is safe on the selected folder.
+        uidvalidity = _selected_uidvalidity(box)
+        uids = box.uids()
+        total = len(uids)
 
         if total == 0:
             return [], 0, uidvalidity
@@ -176,6 +195,15 @@ def fetch_headers(
                 pass
 
 
+_BODY_CAP = 500_000
+
+
+def _body_of(msg) -> str:
+    html = (msg.html or "").strip()
+    body = html if html else (msg.text or "")
+    return body[:_BODY_CAP]
+
+
 def fetch_body(
     host: str,
     port: int,
@@ -190,13 +218,57 @@ def fetch_body(
     try:
         box = _open(host, port, use_ssl, username, password)
         for msg in box.fetch(AND(uid=str(uid)), mark_seen=False, bulk=False):
-            html = (msg.html or "").strip()
-            body = html if html else (msg.text or "")
-            cap = 500_000
-            return body[:cap]
+            return _body_of(msg)
         return ""
     except Exception:
         return ""
+    finally:
+        if box is not None:
+            try:
+                box.logout()
+            except Exception:
+                pass
+
+
+def fetch_bodies(
+    host: str,
+    port: int,
+    use_ssl: bool,
+    username: str,
+    password: str,
+    uids: list[str],
+    progress: Callable[[int, int], None] | None = None,
+) -> dict[str, str]:
+    """Fetch many message bodies in a **single login** (one connection, many
+    UIDs) — far cheaper than one ``fetch_body`` (reconnect) per message when
+    caching an account's mail in bulk. Returns ``{uid: body}`` (HTML preferred);
+    UIDs that fail or return nothing are simply absent. Best-effort: on a
+    connection-level failure returns whatever was gathered so far."""
+    if not uids:
+        return {}
+    out: dict[str, str] = {}
+    box = None
+    total = len(uids)
+    try:
+        box = _open(host, port, use_ssl, username, password)
+        done = 0
+        for uid in uids:
+            try:
+                for msg in box.fetch(AND(uid=str(uid)), mark_seen=False, bulk=False):
+                    body = _body_of(msg)
+                    if body:
+                        out[str(uid)] = body
+                    break
+            except Exception:
+                pass  # skip this UID, keep going
+            done += 1
+            if progress and done % 20 == 0:
+                progress(done, total)
+        if progress:
+            progress(total, total)
+        return out
+    except Exception:
+        return out
     finally:
         if box is not None:
             try:

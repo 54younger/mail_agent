@@ -33,6 +33,9 @@ class JobApplication(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     company: Mapped[str] = mapped_column(String, default="")
+    # Job title/role, when the email names one ("" = unspecified). Together with
+    # company it forms the dedup unit for the board's per-application summary.
+    position: Mapped[str] = mapped_column(String, default="", server_default="")
     applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status_code: Mapped[int] = mapped_column(Integer, default=JobStatus.APPLIED.value)
 

@@ -3,6 +3,7 @@ import { api } from './client';
 
 export interface EmailListItem {
   id: number;
+  account_id: number;
   uid: string;
   folder: string;
   from_address: string;
@@ -20,6 +21,7 @@ export interface EmailPage {
 
 export interface EmailDetail {
   id: number;
+  account_id: number;
   uid: string;
   folder: string;
   from_address: string;
@@ -33,10 +35,14 @@ export interface EmailDetail {
 
 export const PAGE_SIZE = 100;
 
-export function useEmails(page: number, size: number = PAGE_SIZE) {
+export function useEmails(page: number, accountId: number | null = null, size: number = PAGE_SIZE) {
   return useQuery({
-    queryKey: ['emails', page, size],
-    queryFn: () => api.get<EmailPage>(`/api/emails?page=${page}&size=${size}`),
+    queryKey: ['emails', page, size, accountId],
+    queryFn: () => {
+      const q = new URLSearchParams({ page: String(page), size: String(size) });
+      if (accountId != null) q.set('account_id', String(accountId));
+      return api.get<EmailPage>(`/api/emails?${q.toString()}`);
+    },
   });
 }
 
@@ -52,7 +58,6 @@ export function useTranslateEmail(id: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post<EmailDetail>(`/api/emails/${id}/translate`),
-    // Cache the translated body onto the email query so the toggle can use it.
     onSuccess: (data) => qc.setQueryData(['email', id], data),
   });
 }

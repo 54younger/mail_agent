@@ -1,4 +1,5 @@
-"""Email listing (paginated, newest first) + lazy body fetch on open."""
+"""Email listing (paginated, newest first, optional per-account filter) + lazy
+body fetch on open (via the email's own account)."""
 
 from __future__ import annotations
 
@@ -22,20 +23,23 @@ _MAX_SIZE = 200
 async def list_emails(
     page: int = Query(0, ge=0),
     size: int = Query(100, ge=1),
+    account_id: int | None = Query(None, description="Filter to one account; omit for all"),
     session: AsyncSession = Depends(get_session),
 ) -> EmailPage:
     size = min(size, _MAX_SIZE)
-    total = (await session.execute(select(func.count()).select_from(EmailMessage))).scalar_one()
+
+    count_q = select(func.count()).select_from(EmailMessage)
+    rows_q = select(EmailMessage).order_by(EmailMessage.date.desc())
+    if account_id is not None:
+        count_q = count_q.where(EmailMessage.account_id == account_id)
+        rows_q = rows_q.where(EmailMessage.account_id == account_id)
+
+    total = (await session.execute(count_q)).scalar_one()
     page_count = max(1, (total + size - 1) // size) if total else 1
     page = min(page, page_count - 1)
 
     rows = (
-        await session.execute(
-            select(EmailMessage)
-            .order_by(EmailMessage.date.desc())
-            .offset(page * size)
-            .limit(size)
-        )
+        await session.execute(rows_q.offset(page * size).limit(size))
     ).scalars().all()
 
     return EmailPage(
@@ -55,9 +59,9 @@ async def get_email(
     if email is None:
         raise HTTPException(status_code=404, detail="邮件不存在")
 
-    # Lazy body fetch on first open; cache into the row.
+    # Lazy body fetch on first open, via the email's own account.
     if not email.body_text:
-        acc = (await session.execute(select(Account).limit(1))).scalar_one_or_none()
+        acc = await _account_for(session, email.account_id)
         if acc is not None:
             password = await run_in_threadpool(
                 secrets_store.get_imap_password, acc.credential_key
@@ -77,3 +81,15 @@ async def get_email(
                     await session.flush()
 
     return EmailDetail.model_validate(email)
+
+
+async def _account_for(session: AsyncSession, account_id: int) -> Account | None:
+    """The email's own account, falling back to the first account for legacy
+    rows written before multi-account (account_id == 0)."""
+    if account_id:
+        acc = await session.get(Account, account_id)
+        if acc is not None:
+            return acc
+    return (
+        await session.execute(select(Account).order_by(Account.id).limit(1))
+    ).scalar_one_or_none()

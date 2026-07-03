@@ -40,6 +40,8 @@ async def app_client(data_dir: Path):
         yield client
 
     await db.reset_engine()
-    # reset sync manager module state between tests
+    # reset background-manager module state between tests
     sm = importlib.import_module("app.services.sync_manager")
     sm._state = sm.SyncState()
+    em = importlib.import_module("app.services.job_extract_manager")
+    em._state = em.ExtractState()

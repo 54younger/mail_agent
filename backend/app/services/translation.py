@@ -1,7 +1,8 @@
-"""On-demand email translation via Claude Haiku.
+"""On-demand email translation via the configured ``translate`` LLM role.
 
 Flow: detect the source language; if it already equals the target, return the
-original untouched (no API call). Otherwise translate with Claude and let the
+original untouched (no API call). Otherwise translate with the configured
+provider/model (Claude, OpenAI, or an OpenAI-compatible endpoint) and let the
 caller cache the result on the row. HTML is stripped to plain text before
 translation so we translate readable content, not markup.
 """
@@ -11,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .. import secrets_store
+from . import llm
 
 # Supported targets: ISO code -> (display label, English name for the prompt).
 TRANSLATION_TARGETS: dict[str, tuple[str, str]] = {
@@ -25,7 +26,6 @@ TRANSLATION_TARGETS: dict[str, tuple[str, str]] = {
 }
 DEFAULT_TARGET = "en"
 
-_MODEL = "claude-haiku-4-5-20251001"
 _MAX_INPUT_CHARS = 12_000
 
 
@@ -57,13 +57,19 @@ def _strip_html(text: str) -> str:
     return text.strip()
 
 
+# Lingua builds a sizable model; build it once and reuse it across calls.
+_detector = None
+
+
 def detect_language(text: str) -> str:
     """Best-effort ISO-639-1 detection via lingua; '' if undetectable."""
+    global _detector
     try:
-        from lingua import LanguageDetectorBuilder
+        if _detector is None:
+            from lingua import LanguageDetectorBuilder
 
-        detector = LanguageDetectorBuilder.from_all_languages().build()
-        lang = detector.detect_language_of(text)
+            _detector = LanguageDetectorBuilder.from_all_languages().build()
+        lang = _detector.detect_language_of(text)
         if lang is None:
             return ""
         return lang.iso_code_639_1.name.lower()
@@ -72,12 +78,12 @@ def detect_language(text: str) -> str:
 
 
 class TranslationService:
-    def __init__(self, api_key: str | None):
-        self._api_key = api_key or ""
+    def __init__(self, cfg: llm.LLMConfig):
+        self._cfg = cfg
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._api_key)
+        return self._cfg.is_configured
 
     def translate(self, text: str, *, target_lang: str) -> TranslationResult:
         target = target_lang if target_lang in TRANSLATION_TARGETS else DEFAULT_TARGET
@@ -94,26 +100,17 @@ class TranslationService:
 
         target_name = TRANSLATION_TARGETS[target][1]
         snippet = plain[:_MAX_INPUT_CHARS]
-        translated = self._call_claude(snippet, target_name)
+        translated = self._call_model(snippet, target_name)
         return TranslationResult(translated=translated, source_lang=source, skipped=False)
 
-    def _call_claude(self, text: str, target_name: str) -> str:
-        from anthropic import Anthropic
-
-        client = Anthropic(api_key=self._api_key)
+    def _call_model(self, text: str, target_name: str) -> str:
         prompt = (
             f"Translate the following email into {target_name}. "
             "Preserve meaning and tone; output only the translation, no notes.\n\n"
             f"{text}"
         )
-        msg = client.messages.create(
-            model=_MODEL,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        parts = [block.text for block in msg.content if getattr(block, "type", "") == "text"]
-        return "\n".join(parts).strip()
+        return llm.complete_text(self._cfg, prompt, max_tokens=4096)
 
 
 def get_service() -> TranslationService:
-    return TranslationService(secrets_store.get_claude_key())
+    return TranslationService(llm.get_llm_config("translate"))

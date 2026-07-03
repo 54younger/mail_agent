@@ -11,3 +11,4 @@ class SyncStatus(BaseModel):
     error: str | None = None
     hint: str | None = None
     kind: str | None = None
+    detail: str | None = None

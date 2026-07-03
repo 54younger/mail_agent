@@ -1,16 +1,40 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { PageHeader } from '../../components/PageHeader';
+import { useAccounts } from '../../api/account';
 import { useEmails, type EmailListItem } from '../../api/emails';
 import { formatListDate } from '../../lib/format';
 import { EmailDetail } from './EmailDetail';
 
-// 收件箱 — master/detail. List paginates 100/page, newest first; the reading
-// pane lazily loads the body on open.
+// Small stable palette so each account gets a consistent badge color.
+const BADGE_COLORS = [
+  'bg-indigo-100 text-indigo-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-amber-100 text-amber-700',
+  'bg-sky-100 text-sky-700',
+  'bg-rose-100 text-rose-700',
+  'bg-violet-100 text-violet-700',
+];
+
+// 收件箱 — merged, newest-first across all accounts (or filtered to one).
+// List paginates 100/page; the reading pane lazily loads the body on open.
 export function InboxPage() {
+  const accounts = useAccounts();
   const [page, setPage] = useState(0);
+  const [accountFilter, setAccountFilter] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  const { data, isLoading, isError } = useEmails(page);
+  const { data, isLoading, isError } = useEmails(page, accountFilter);
+
+  const accountList = accounts.data ?? [];
+  const multi = accountList.length > 1;
+  const labelFor = (id: number) => {
+    const a = accountList.find((x) => x.id === id);
+    return a ? a.username : '';
+  };
+  const colorFor = (id: number) => {
+    const idx = Math.max(0, accountList.findIndex((x) => x.id === id));
+    return BADGE_COLORS[idx % BADGE_COLORS.length];
+  };
 
   const goPage = (next: number) => {
     setSelected(null);
@@ -19,9 +43,30 @@ export function InboxPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="收件箱" subtitle="邮件按最新排序，每页 100 封" />
+      <PageHeader title="收件箱" subtitle="所有账户合并，按最新排序，每页 100 封" />
       <div className="flex min-h-0 flex-1">
-        <div className="flex w-[360px] shrink-0 flex-col border-r border-slate-200 bg-white">
+        <div className="flex w-[380px] shrink-0 flex-col border-r border-slate-200 bg-white">
+          {multi && (
+            <div className="border-b border-slate-100 p-2">
+              <select
+                value={accountFilter ?? ''}
+                onChange={(e) => {
+                  setSelected(null);
+                  setPage(0);
+                  setAccountFilter(e.target.value ? Number(e.target.value) : null);
+                }}
+                className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-slate-900"
+              >
+                <option value="">全部账户</option>
+                {accountList.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.username}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {isLoading ? (
             <Note>加载中…</Note>
           ) : isError ? (
@@ -36,6 +81,9 @@ export function InboxPage() {
                     key={e.id}
                     email={e}
                     selected={e.id === selected}
+                    showBadge={multi && accountFilter == null}
+                    badgeLabel={labelFor(e.account_id)}
+                    badgeColor={colorFor(e.account_id)}
                     onClick={() => setSelected(e.id)}
                   />
                 ))}
@@ -70,10 +118,16 @@ export function InboxPage() {
 function EmailRow({
   email,
   selected,
+  showBadge,
+  badgeLabel,
+  badgeColor,
   onClick,
 }: {
   email: EmailListItem;
   selected: boolean;
+  showBadge: boolean;
+  badgeLabel: string;
+  badgeColor: string;
   onClick: () => void;
 }) {
   return (
@@ -92,9 +146,16 @@ function EmailRow({
             {formatListDate(email.date)}
           </span>
         </div>
-        <span className="truncate text-xs text-slate-500">
-          {email.from_address || '未知发件人'}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {showBadge && badgeLabel && (
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${badgeColor}`}>
+              {badgeLabel}
+            </span>
+          )}
+          <span className="truncate text-xs text-slate-500">
+            {email.from_address || '未知发件人'}
+          </span>
+        </div>
       </button>
     </li>
   );

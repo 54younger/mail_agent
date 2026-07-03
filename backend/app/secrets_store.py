@@ -33,16 +33,37 @@ def imap_credential_key(username: str, host: str) -> str:
 # ── Backend selection ────────────────────────────────────────────────────────
 
 
+_keyring_ok: bool | None = None
+
+
 def _keyring_available() -> bool:
+    """True only if the OS keyring actually round-trips a value.
+
+    Merely having a non-``fail`` backend isn't enough: on WSL/headless the
+    Secret Service backend is reported but has no running daemon, so set/get
+    fails or doesn't persist — which caused credentials to vanish on restart.
+    We probe with a real set→get→delete (cached) and fall back to the encrypted
+    file store otherwise, so bindings always survive a restart.
+    """
+    global _keyring_ok
     if os.environ.get(_ENV_FORCE_FILE):
         return False
+    if _keyring_ok is not None:
+        return _keyring_ok
     try:
         import keyring
-        from keyring.backends.fail import Keyring as FailKeyring
 
-        return not isinstance(keyring.get_keyring(), FailKeyring)
+        probe = "__mailagent_probe__"
+        keyring.set_password(_SERVICE, probe, "1")
+        ok = keyring.get_password(_SERVICE, probe) == "1"
+        try:
+            keyring.delete_password(_SERVICE, probe)
+        except Exception:
+            pass
+        _keyring_ok = bool(ok)
     except Exception:
-        return False
+        _keyring_ok = False
+    return _keyring_ok
 
 
 # ── Encrypted-file backend ───────────────────────────────────────────────────

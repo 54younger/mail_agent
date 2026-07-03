@@ -13,7 +13,7 @@ async def test_health_and_empty_state(app_client):
     r = await app_client.get("/api/health")
     assert r.json()["configured"] is True
 
-    assert (await app_client.get("/api/account")).json() is None
+    assert (await app_client.get("/api/accounts")).json() == []
 
     page = (await app_client.get("/api/emails")).json()
     assert page == {"items": [], "total": 0, "page": 0, "size": 100, "page_count": 1}
@@ -27,7 +27,7 @@ async def test_bind_account_imap_error_is_structured(app_client, monkeypatch):
         imap_sync, "test_connection", lambda *a, **k: error_info(ImapErrorKind.AUTH_FAILED)
     )
     r = await app_client.post(
-        "/api/account",
+        "/api/accounts",
         json={"host": "imap.x.com", "username": "u@x.com", "password": "wrong"},
     )
     assert r.status_code == 400
@@ -42,7 +42,7 @@ async def test_bind_then_sync_upserts_without_duplicates(app_client, monkeypatch
     # Bind succeeds (no IMAP error); password store uses the file backend (no-op keyring).
     monkeypatch.setattr(imap_sync, "test_connection", lambda *a, **k: None)
     r = await app_client.post(
-        "/api/account",
+        "/api/accounts",
         json={"host": "imap.x.com", "username": "u@x.com", "password": "authcode"},
     )
     assert r.status_code == 200
@@ -78,6 +78,56 @@ async def test_bind_then_sync_upserts_without_duplicates(app_client, monkeypatch
     page = (await app_client.get("/api/emails")).json()
     assert page["total"] == 4
     assert page["items"][0]["subject"].startswith("Offer")
+
+
+async def test_multiple_accounts_sync_filter_and_delete(app_client, monkeypatch):
+    from app.services import imap_sync, sync_manager
+
+    monkeypatch.setattr(imap_sync, "test_connection", lambda *a, **k: None)
+    a1 = (
+        await app_client.post(
+            "/api/accounts",
+            json={"host": "imap.163.com", "username": "a@163.com", "password": "p1"},
+        )
+    ).json()
+    a2 = (
+        await app_client.post(
+            "/api/accounts",
+            json={"host": "imap.qq.com", "username": "b@qq.com", "password": "p2"},
+        )
+    ).json()
+    assert a1["id"] != a2["id"]
+    assert len((await app_client.get("/api/accounts")).json()) == 2
+
+    base = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+    def fake_fetch(host, port, use_ssl, username, password, *, full, limit, progress=None):
+        # Same UID "1" on both servers → the (account_id, folder, uid) key keeps
+        # them distinct instead of colliding.
+        if "163" in host:
+            rows = [imap_sync.EmailRow("1", "INBOX", "hr@163.com", username, "s163", base)]
+        else:
+            rows = [
+                imap_sync.EmailRow("1", "INBOX", "hr@qq.com", username, "sqq1", base),
+                imap_sync.EmailRow("2", "INBOX", "hr@qq.com", username, "sqq2", base),
+            ]
+        return rows, len(rows), 1
+
+    monkeypatch.setattr(imap_sync, "fetch_headers", fake_fetch)
+    await sync_manager.start_sync(full=True)
+    await _wait_done(app_client)
+
+    assert (await app_client.get("/api/emails")).json()["total"] == 3
+    p1 = (await app_client.get(f"/api/emails?account_id={a1['id']}")).json()
+    p2 = (await app_client.get(f"/api/emails?account_id={a2['id']}")).json()
+    assert p1["total"] == 1
+    assert p2["total"] == 2
+    assert all(i["account_id"] == a2["id"] for i in p2["items"])
+
+    # Deleting one account removes only its emails.
+    assert (await app_client.delete(f"/api/accounts/{a1['id']}")).status_code == 204
+    assert len((await app_client.get("/api/accounts")).json()) == 1
+    assert (await app_client.get("/api/emails")).json()["total"] == 2
 
 
 async def _wait_done(app_client):

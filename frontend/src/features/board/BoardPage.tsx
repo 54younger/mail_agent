@@ -1,62 +1,122 @@
 import type { ReactNode } from 'react';
-import { useState } from 'react';
-import { ApiError } from '../../api/client';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  type JobApplication,
+  type ApplicationSummary,
+  type ExtractRange,
   useCreateJob,
-  useExtractJobs,
-  useJobs,
-  useUpdateJobStatus,
+  useExtractStatus,
+  useJobStats,
+  useJobSummary,
+  useTriggerExtract,
 } from '../../api/jobs';
 import { JOB_STATUSES, statusMeta } from '../../lib/jobStatus';
+import { CompanyTable } from './CompanyTable';
+import { ExtractProgress } from './ExtractProgress';
 import { JobDrawer } from './JobDrawer';
+import { StatsDashboard } from './StatsDashboard';
+
+type RangePreset = '30' | '90' | 'all' | 'custom';
 
 export function BoardPage() {
-  const jobs = useJobs();
-  const extract = useExtractJobs();
-  const updateStatus = useUpdateJobStatus();
+  const qc = useQueryClient();
+  const summary = useJobSummary();
+  const stats = useJobStats();
+  const extractStatus = useExtractStatus();
+  const triggerExtract = useTriggerExtract();
 
-  const [selected, setSelected] = useState<JobApplication | null>(null);
-  const [dragId, setDragId] = useState<number | null>(null);
+  const [selected, setSelected] = useState<ApplicationSummary | null>(null);
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [preset, setPreset] = useState<RangePreset>('90');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
 
-  const items = jobs.data ?? [];
+  const rows = summary.data ?? [];
+  const status = extractStatus.data;
+  const running = status?.running ?? false;
+
+  // When a background extraction finishes, refresh the board and summarize.
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (!status) return;
+    if (wasRunning.current && !status.running) {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+      setNotice(
+        status.error
+          ? status.error
+          : `已处理 ${status.total} 封邮件，新增 ${status.created} 条投递记录`,
+      );
+    }
+    wasRunning.current = status.running;
+  }, [status, qc]);
+
+  const computeRange = (): ExtractRange => {
+    if (preset === 'all') return {};
+    if (preset === 'custom') {
+      const r: ExtractRange = {};
+      if (customStart) r.since = new Date(`${customStart}T00:00:00`).toISOString();
+      if (customEnd) r.until = new Date(`${customEnd}T23:59:59`).toISOString();
+      return r;
+    }
+    const days = preset === '30' ? 30 : 90;
+    return { since: new Date(Date.now() - days * 86_400_000).toISOString() };
+  };
 
   const runExtract = () => {
     setNotice(null);
-    extract.mutate(undefined, {
-      onSuccess: (r) => setNotice(`已扫描 ${r.scanned} 封邮件，新增 ${r.created} 条投递记录`),
-      onError: (e) => setNotice((e as ApiError).message),
-    });
+    triggerExtract.mutate(computeRange());
   };
 
-  const onDropTo = (statusCode: number) => {
-    if (dragId != null) {
-      const job = items.find((j) => j.id === dragId);
-      if (job && job.status_code !== statusCode) {
-        updateStatus.mutate({ id: dragId, status_code: statusCode });
-      }
-    }
-    setDragId(null);
-  };
+  // Keep the drawer bound to fresh data after mutations (status change / delete).
+  const selectedLive =
+    selected && rows.find((r) => r.company === selected.company && r.position === selected.position);
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-start justify-between border-b border-slate-200 bg-white px-6 py-4">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-slate-900">求职看板</h1>
-          <p className="mt-0.5 text-sm text-slate-400">
-            从邮件自动抽取的投递记录 · 拖拽卡片可改变状态
-          </p>
+          <p className="mt-0.5 text-sm text-slate-400">按公司 + 职位聚合的投递总表与统计</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <select
+            value={preset}
+            onChange={(e) => setPreset(e.target.value as RangePreset)}
+            disabled={running}
+            title="抽取的邮件时间范围"
+            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-slate-900 disabled:opacity-50"
+          >
+            <option value="90">近 90 天</option>
+            <option value="30">近 30 天</option>
+            <option value="all">全部</option>
+            <option value="custom">自定义</option>
+          </select>
+          {preset === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                disabled={running}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-slate-900 disabled:opacity-50"
+              />
+              <span className="text-xs text-slate-400">至</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                disabled={running}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-slate-900 disabled:opacity-50"
+              />
+            </div>
+          )}
           <button
             onClick={runExtract}
-            disabled={extract.isPending}
+            disabled={running || triggerExtract.isPending}
             className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
-            {extract.isPending ? '正在抽取…' : '从邮件抽取'}
+            {running ? '抽取中…' : '从邮件抽取'}
           </button>
           <button
             onClick={() => setAdding(true)}
@@ -67,96 +127,37 @@ export function BoardPage() {
         </div>
       </div>
 
-      {notice && (
+      {running && status && <ExtractProgress status={status} />}
+
+      {notice && !running && (
         <div className="border-b border-slate-100 bg-slate-50 px-6 py-2 text-xs text-slate-600">
           {notice}
         </div>
       )}
 
-      {jobs.isLoading ? (
+      {summary.isLoading ? (
         <Center>加载中…</Center>
-      ) : items.length === 0 ? (
+      ) : rows.length === 0 ? (
         <Center>
           还没有投递记录。点击「从邮件抽取」让 Claude 从邮件中识别求职投递，或「手动添加」。
         </Center>
       ) : (
-        <div className="flex flex-1 gap-4 overflow-x-auto p-6">
-          {JOB_STATUSES.map((s) => {
-            const cards = items.filter((j) => j.status_code === s.code);
-            return (
-              <div
-                key={s.code}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => onDropTo(s.code)}
-                className="flex w-72 shrink-0 flex-col rounded-xl bg-slate-50 ring-1 ring-slate-100"
-              >
-                <div className="flex items-center gap-2 px-3 py-2.5">
-                  <span className={`h-2.5 w-2.5 rounded-full ${s.dot}`} />
-                  <span className="text-sm font-medium text-slate-700">{s.label}</span>
-                  <span className="ml-auto text-xs text-slate-400">{cards.length}</span>
-                </div>
-                <div className={`h-0.5 ${s.accent} opacity-60`} />
-                <div className="flex flex-1 flex-col gap-2 overflow-auto p-2">
-                  {cards.map((job) => (
-                    <JobCard
-                      key={job.id}
-                      job={job}
-                      onDragStart={() => setDragId(job.id)}
-                      onClick={() => setSelected(job)}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div className="flex-1 space-y-5 overflow-auto p-6">
+          {stats.data && <StatsDashboard stats={stats.data} />}
+          <CompanyTable rows={rows} onSelect={setSelected} />
         </div>
       )}
 
-      {selected && <JobDrawer job={selected} onClose={() => setSelected(null)} />}
+      {selectedLive && <JobDrawer row={selectedLive} onClose={() => setSelected(null)} />}
       {adding && <ManualAddModal onClose={() => setAdding(false)} />}
     </div>
-  );
-}
-
-function JobCard({
-  job,
-  onDragStart,
-  onClick,
-}: {
-  job: JobApplication;
-  onDragStart: () => void;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      draggable
-      onDragStart={onDragStart}
-      onClick={onClick}
-      className="cursor-grab rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-semibold text-slate-800">
-          {job.company || '（未知公司）'}
-        </span>
-        {job.manually_edited && (
-          <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-            手动
-          </span>
-        )}
-      </div>
-      {job.source_subject && (
-        <div className="mt-1 truncate text-xs text-slate-500">{job.source_subject}</div>
-      )}
-      <div className="mt-1.5 text-[11px] text-slate-400">
-        {new Date(job.applied_at).toLocaleDateString()}
-      </div>
-    </button>
   );
 }
 
 function ManualAddModal({ onClose }: { onClose: () => void }) {
   const create = useCreateJob();
   const [company, setCompany] = useState('');
+  const [position, setPosition] = useState('');
   const [statusCode, setStatusCode] = useState(0);
 
   return (
@@ -175,7 +176,7 @@ function ManualAddModal({ onClose }: { onClose: () => void }) {
             e.preventDefault();
             if (company.trim()) {
               create.mutate(
-                { company: company.trim(), status_code: statusCode },
+                { company: company.trim(), position: position.trim(), status_code: statusCode },
                 { onSuccess: onClose },
               );
             }
@@ -186,6 +187,12 @@ function ManualAddModal({ onClose }: { onClose: () => void }) {
             value={company}
             onChange={(e) => setCompany(e.target.value)}
             placeholder="公司名称"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+          />
+          <input
+            value={position}
+            onChange={(e) => setPosition(e.target.value)}
+            placeholder="职位（可选）"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
           />
           <select

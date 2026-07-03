@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
-import { useAccount } from '../api/account';
+import { useAccounts } from '../api/account';
+import { useSettings } from '../api/settings';
 import { useTriggerSync } from '../api/sync';
 import { SyncBar } from '../components/SyncBar';
 
@@ -20,20 +21,41 @@ const NAV: NavItem[] = [
 // Trigger one incremental sync per app load once an account exists, so reopening
 // the app refreshes the newest mail (with the top progress bar).
 function useAutoSyncOnMount() {
-  const account = useAccount();
+  const accounts = useAccounts();
   const trigger = useTriggerSync();
   const started = useRef(false);
   useEffect(() => {
-    if (!started.current && account.data) {
+    if (!started.current && accounts.data && accounts.data.length > 0) {
       started.current = true;
       trigger.mutate(false);
     }
-  }, [account.data, trigger]);
+  }, [accounts.data, trigger]);
+}
+
+// While the app stays open, incrementally refresh mail on the user's configured
+// interval. The backend no-ops a trigger when a sync is already running, so this
+// can't stack. Disabled when there are no accounts or the setting is off.
+function useAutoRefreshInterval() {
+  const accounts = useAccounts();
+  const settings = useSettings();
+  const trigger = useTriggerSync();
+
+  const enabled = settings.data?.auto_refresh_enabled ?? false;
+  const minutes = settings.data?.auto_refresh_minutes ?? 15;
+  const hasAccounts = (accounts.data?.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (!enabled || !hasAccounts) return;
+    const ms = Math.max(1, minutes) * 60_000;
+    const id = window.setInterval(() => trigger.mutate(false), ms);
+    return () => window.clearInterval(id);
+  }, [enabled, minutes, hasAccounts, trigger]);
 }
 
 // Left-rail shell. Board is the primary destination; inbox + settings support it.
 export function AppShell({ children }: { children: ReactNode }) {
   useAutoSyncOnMount();
+  useAutoRefreshInterval();
 
   return (
     <div className="flex h-full">

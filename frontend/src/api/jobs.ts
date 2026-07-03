@@ -17,33 +17,125 @@ export interface JobApplication {
   source_subject: string | null;
 }
 
-export interface ExtractResult {
+export type ExtractStage = '' | 'keyword' | 'classify' | 'extract';
+export type ExtractPhase = '' | 'cache' | 'scan';
+
+export interface ExtractStatus {
+  running: boolean;
+  phase: ExtractPhase;
+  total: number;
+  current: number;
+  stage: ExtractStage;
   created: number;
-  scanned: number;
+  done: boolean;
+  error: string | null;
+  hint: string | null;
+  detail: string | null;
 }
 
 export interface ManualJobInput {
   company: string;
+  position?: string;
   applied_at?: string;
   status_code?: number;
 }
 
+// ── Deduped board summary (one row per company+position) + dashboard stats ────
+
+export interface SummaryRecord {
+  id: number;
+  email_id: number;
+  source_subject: string | null;
+  status_code: number;
+  applied_at: string;
+  timeline: TimelineEntry[];
+}
+
+export interface ApplicationSummary {
+  company: string;
+  position: string;
+  applied_at: string; // earliest
+  status_code: number; // current (latest event)
+  last_update: string;
+  count: number;
+  manually_edited: boolean;
+  primary_id: number; // target of inline status edits
+  records: SummaryRecord[];
+}
+
+export interface TrendPoint {
+  date: string; // YYYY-MM-DD
+  count: number;
+}
+
+export interface FunnelStage {
+  status_code: number;
+  count: number;
+}
+
+export interface JobStats {
+  total: number;
+  by_status: Record<string, number>;
+  trend: TrendPoint[];
+  funnel: FunnelStage[];
+  interview_rate: number;
+  offer_rate: number;
+}
+
+// Invalidate every jobs-derived query (list, summary, stats) after a mutation.
 function invalidateJobs(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['jobs'] });
 }
 
 export function useJobs() {
   return useQuery({
-    queryKey: ['jobs'],
+    queryKey: ['jobs', 'list'],
     queryFn: () => api.get<JobApplication[]>('/api/jobs'),
   });
 }
 
-export function useExtractJobs() {
+export function useJobSummary() {
+  return useQuery({
+    queryKey: ['jobs', 'summary'],
+    queryFn: () => api.get<ApplicationSummary[]>('/api/jobs/summary'),
+  });
+}
+
+export function useJobStats() {
+  return useQuery({
+    queryKey: ['jobs', 'stats'],
+    queryFn: () => api.get<JobStats>('/api/jobs/stats'),
+  });
+}
+
+export function useExtractStatus() {
+  return useQuery({
+    queryKey: ['extract-status'],
+    queryFn: () => api.get<ExtractStatus>('/api/jobs/extract/status'),
+    // Poll while running; stop otherwise (mirrors the sync-status pattern).
+    refetchInterval: (q) => (q.state.data?.running ? 600 : false),
+  });
+}
+
+export interface ExtractRange {
+  since?: string;
+  until?: string;
+}
+
+export function useTriggerExtract() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<ExtractResult>('/api/jobs/extract'),
-    onSuccess: () => invalidateJobs(qc),
+    mutationFn: (range: ExtractRange = {}) => {
+      const params = new URLSearchParams();
+      if (range.since) params.set('since', range.since);
+      if (range.until) params.set('until', range.until);
+      const qs = params.toString();
+      return api.post<ExtractStatus>(`/api/jobs/extract${qs ? `?${qs}` : ''}`);
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(['extract-status'], data);
+      qc.invalidateQueries({ queryKey: ['extract-status'] });
+    },
   });
 }
 

@@ -17,9 +17,14 @@ from ..db import Base
 
 class EmailMessage(Base):
     __tablename__ = "email_message"
-    __table_args__ = (UniqueConstraint("folder", "uid", name="uq_email_folder_uid"),)
+    __table_args__ = (
+        UniqueConstraint("account_id", "folder", "uid", name="uq_email_account_folder_uid"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # Owning account (FK to account.id). 0 for pre-multi-account legacy rows.
+    account_id: Mapped[int] = mapped_column(Integer, index=True, default=0)
 
     # IMAP UID, scoped to a folder (stored as text to match provider formats).
     uid: Mapped[str] = mapped_column(String, index=True, default="")
@@ -37,3 +42,12 @@ class EmailMessage(Base):
     # Translation cache (Phase 2).
     translated_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     detected_lang: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Job-pipeline screen state: 0=unscreened, 1=screened-not-job, 2=linked to a
+    # JobApplication. Lets extraction skip already-judged mail instead of
+    # re-sending the newest emails to the LLM on every run. server_default keeps
+    # the column populated when the table is rebuilt (omitted-column inserts) and
+    # when it's added to a pre-existing DB.
+    job_screened: Mapped[int] = mapped_column(
+        Integer, index=True, default=0, server_default="0"
+    )

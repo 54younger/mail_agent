@@ -20,30 +20,31 @@ export interface BindAccountInput {
   display_name?: string;
 }
 
-export function useAccount() {
+export function useAccounts() {
   return useQuery({
-    queryKey: ['account'],
-    queryFn: () => api.get<Account | null>('/api/account'),
+    queryKey: ['accounts'],
+    queryFn: () => api.get<Account[]>('/api/accounts'),
   });
 }
 
 export function useBindAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: BindAccountInput) => api.post<Account>('/api/account', input),
+    mutationFn: (input: BindAccountInput) => api.post<Account>('/api/accounts', input),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['account'] });
+      qc.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 }
 
-export function useUnbindAccount() {
+export function useDeleteAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.del<void>('/api/account'),
+    mutationFn: (id: number) => api.del<void>(`/api/accounts/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['account'] });
+      qc.invalidateQueries({ queryKey: ['accounts'] });
       qc.invalidateQueries({ queryKey: ['emails'] });
+      qc.invalidateQueries({ queryKey: ['jobs'] });
     },
   });
 }

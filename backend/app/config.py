@@ -14,10 +14,11 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
-from platformdirs import user_config_dir
+from platformdirs import user_config_dir, user_data_dir
 
 APP_NAME = "mail_agent"
 
@@ -26,7 +27,12 @@ _ENV_DATA_DIR = "MAIL_AGENT_DATA_DIR"
 
 _DEFAULT_SETTINGS: dict[str, object] = {
     "translation_target": "en",
+    "auto_refresh_enabled": True,
+    "auto_refresh_minutes": 15,
 }
+
+# Data files copied when the user moves their data folder (see change_data_dir).
+_MIGRATE_FILES = ("app.sqlite", "settings.json", ".secrets.enc", ".secret.key")
 
 
 def _bootstrap_config_path() -> Path:
@@ -34,22 +40,30 @@ def _bootstrap_config_path() -> Path:
     return Path(user_config_dir(APP_NAME, appauthor=False)) / "config.json"
 
 
+def default_data_dir() -> Path:
+    """Sensible per-user default so the app works on first launch without a
+    forced setup prompt (e.g. ``~/.local/share/mail_agent`` on Linux)."""
+    return Path(user_data_dir(APP_NAME, appauthor=False))
+
+
 def get_data_dir() -> Path | None:
-    """Return the configured data folder, or ``None`` if first-run setup is
-    still pending. Env var wins so tests/Docker can pin a path."""
+    """Return the data folder to use. Never ``None`` in normal operation: an
+    explicit env override wins (tests/Docker); otherwise the recorded folder from
+    first-run/settings; otherwise the per-user default so the app is usable
+    immediately."""
     env = os.environ.get(_ENV_DATA_DIR)
     if env:
         return Path(env).expanduser()
 
     pointer = _bootstrap_config_path()
     if not pointer.exists():
-        return None
+        return default_data_dir()
     try:
         raw = json.loads(pointer.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return None
+        return default_data_dir()
     path = raw.get("data_dir")
-    return Path(path) if path else None
+    return Path(path) if path else default_data_dir()
 
 
 def is_configured() -> bool:
@@ -201,3 +215,27 @@ def clear_data_dir() -> None:
         _bootstrap_config_path().unlink()
     except FileNotFoundError:
         pass
+
+
+def change_data_dir(path: str | os.PathLike[str]) -> Path:
+    """Move the data folder to ``path`` and record it (Settings → change path).
+
+    Copies the SQLite DB, settings, and encrypted secrets from the current folder
+    to the new one (only files that don't already exist at the destination), so
+    accounts/emails/keys survive the move instead of the app coming up empty.
+    Then persists the pointer via :func:`set_data_dir`. Callers must reset the DB
+    engine afterwards so it reopens against the new file.
+    """
+    old = get_data_dir()
+    new = normalize_input_path(path)
+    new.mkdir(parents=True, exist_ok=True)
+    if not os.access(new, os.W_OK):
+        raise PermissionError(f"数据文件夹不可写：{new}")
+
+    if old is not None and old.exists() and old.resolve() != new.resolve():
+        for name in _MIGRATE_FILES:
+            src, dst = old / name, new / name
+            if src.exists() and not dst.exists():
+                shutil.copy2(src, dst)
+
+    return set_data_dir(new)

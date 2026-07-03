@@ -9,6 +9,7 @@ class EmailListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    account_id: int
     uid: str
     folder: str
     from_address: str
@@ -28,6 +29,7 @@ class EmailDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    account_id: int
     uid: str
     folder: str
     from_address: str

@@ -66,6 +66,87 @@ async def init_db() -> None:
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate_schema)
+
+
+def _migrate_schema(conn) -> None:
+    """Tiny migrations for SQLite (no Alembic yet) so pre-existing DBs keep
+    working after schema changes."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(conn)
+    table_names = set(insp.get_table_names())
+
+    # Add the job-title column to pre-existing job boards (dedup unit is
+    # company + position). Independent of the email_message migrations below.
+    if "job_application" in table_names:
+        job_cols = {c["name"] for c in insp.get_columns("job_application")}
+        if "position" not in job_cols:
+            conn.execute(
+                text("ALTER TABLE job_application ADD COLUMN position TEXT DEFAULT ''")
+            )
+
+    if "email_message" not in table_names:
+        return
+
+    cols = {c["name"] for c in insp.get_columns("email_message")}
+    if "account_id" not in cols:
+        conn.execute(
+            text("ALTER TABLE email_message ADD COLUMN account_id INTEGER DEFAULT 0")
+        )
+
+    # If the table still carries the old UNIQUE(folder, uid) constraint (i.e. it
+    # lacks the multi-account UNIQUE(account_id, folder, uid)), rebuild it — SQLite
+    # can't alter a constraint in place. Legacy rows (account_id 0) are remapped to
+    # the sole account so multi-account inserts neither collide nor duplicate.
+    uniques = insp.get_unique_constraints("email_message")
+    has_new = any(set(u["column_names"]) == {"account_id", "folder", "uid"} for u in uniques)
+    if not has_new:
+        _rebuild_email_message(conn)
+
+    # Add the job-pipeline screen column to pre-existing DBs (re-inspect: the
+    # table may have just been rebuilt above, in which case it already exists).
+    cols_now = {c["name"] for c in inspect(conn).get_columns("email_message")}
+    if "job_screened" not in cols_now:
+        conn.execute(
+            text("ALTER TABLE email_message ADD COLUMN job_screened INTEGER DEFAULT 0")
+        )
+
+
+def _rebuild_email_message(conn) -> None:
+    from sqlalchemy import text
+
+    from .models import EmailMessage
+
+    accounts = conn.execute(text("SELECT id FROM account")).fetchall()
+    target = accounts[0][0] if len(accounts) == 1 else 0
+
+    conn.execute(text("ALTER TABLE email_message RENAME TO email_message_old"))
+    EmailMessage.__table__.create(conn, checkfirst=False)
+    # COALESCE the NOT NULL columns so legacy rows with NULLs aren't silently
+    # dropped by OR IGNORE (which then only skips genuine unique-key duplicates).
+    conn.execute(
+        text(
+            """
+            INSERT OR IGNORE INTO email_message
+                (id, account_id, uid, folder, from_address, to_addresses,
+                 subject, body_text, date, translated_text, detected_lang)
+            SELECT id,
+                   CASE WHEN COALESCE(account_id, 0) = 0 THEN :target ELSE account_id END,
+                   COALESCE(uid, ''),
+                   COALESCE(folder, 'INBOX'),
+                   COALESCE(from_address, ''),
+                   COALESCE(to_addresses, ''),
+                   COALESCE(subject, ''),
+                   COALESCE(body_text, ''),
+                   COALESCE(date, CURRENT_TIMESTAMP),
+                   translated_text, detected_lang
+            FROM email_message_old
+            """
+        ),
+        {"target": target},
+    )
+    conn.execute(text("DROP TABLE email_message_old"))
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

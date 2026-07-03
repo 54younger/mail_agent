@@ -19,6 +19,7 @@ def _to_status(s: sync_manager.SyncState) -> SyncStatus:
         error=s.error,
         hint=s.hint,
         kind=s.kind,
+        detail=s.detail,
     )
 
 

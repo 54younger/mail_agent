@@ -1,20 +1,33 @@
-"""Extract job-application facts from an email using Claude Haiku (tool_use).
+"""Two-model stages of the job-email pipeline: cheap classify + strong extract.
 
-Given an email's subject / sender / body, Claude decides whether it's a job
-application email and, if so, returns the company, applied date, and current
-status. The caller upserts a JobApplication (never overwriting manually-edited
-rows). HTML bodies are stripped to text first.
+Stage 0 (keyword pre-filter) lives in ``job_keywords`` and runs in the API layer
+before any model call. Here:
+
+- ``classify_is_job`` uses the cheap ``classify`` role to answer a single
+  yes/no: is this the recipient's own job-application email?
+- ``extract`` uses the stronger ``extract`` role (tool/function calling) to pull
+  company / applied date / status.
+
+The caller (``app/api/jobs.py``) marks each email's ``job_screened`` state and
+upserts a ``JobApplication`` (never overwriting manually-edited rows). HTML
+bodies are stripped to text first. Provider/model per role are configured in
+Settings (Claude, OpenAI, or an OpenAI-compatible endpoint).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .. import secrets_store
 from ..models import JobStatus
+from . import llm
 from .translation import _strip_html
 
-_MODEL = "claude-haiku-4-5-20251001"
+# email_message.job_screened states.
+SCREEN_UNSCREENED = 0  # not yet run through the pipeline
+SCREEN_NOT_JOB = 1  # keyword/classify/extract decided it isn't a job email
+SCREEN_LINKED = 2  # a JobApplication was created for it
+
+_CLASSIFY_BODY_CHARS = 2_000
 _MAX_BODY_CHARS = 8_000
 
 # Claude's status string -> JobStatus code.
@@ -40,6 +53,11 @@ _TOOL = {
                 "invite, offer, or rejection). Newsletters/marketing are false.",
             },
             "company": {"type": "string", "description": "Hiring company name, or empty."},
+            "position": {
+                "type": "string",
+                "description": "Job title/role the email is about (e.g. 'Backend Engineer'), "
+                "or empty if none is named.",
+            },
             "applied_date": {
                 "type": "string",
                 "description": "ISO-8601 date the application/status refers to, or empty.",
@@ -56,7 +74,7 @@ _TOOL = {
 
 
 class JobExtractionUnavailable(Exception):
-    def __init__(self, message: str = "求职抽取不可用：请先在设置中配置 Claude API Key。"):
+    def __init__(self, message: str = "求职抽取不可用：请先在设置中配置分类/抽取模型的 API Key。"):
         super().__init__(message)
         self.message = message
 
@@ -67,55 +85,56 @@ class JobExtraction:
     company: str
     applied_date: str  # ISO string or ""
     status_code: int
+    position: str = ""
 
 
-class JobExtractor:
-    def __init__(self, api_key: str | None):
-        self._api_key = api_key or ""
-
-    @property
-    def is_configured(self) -> bool:
-        return bool(self._api_key)
-
-    def extract(self, *, subject: str, sender: str, body: str) -> JobExtraction:
-        if not self.is_configured:
-            raise JobExtractionUnavailable()
-
-        from anthropic import Anthropic
-
-        plain = _strip_html(body)[:_MAX_BODY_CHARS]
-        content = (
-            "Analyze this email and call record_job_application.\n\n"
-            f"From: {sender}\nSubject: {subject}\n\n{plain}"
-        )
-        client = Anthropic(api_key=self._api_key)
-        msg = client.messages.create(
-            model=_MODEL,
-            max_tokens=512,
-            tools=[_TOOL],
-            tool_choice={"type": "tool", "name": "record_job_application"},
-            messages=[{"role": "user", "content": content}],
-        )
-
-        data = _first_tool_input(msg)
-        if data is None:
-            return JobExtraction(False, "", "", JobStatus.UNKNOWN)
-
-        status_code = _STATUS_MAP.get(str(data.get("status", "unknown")), JobStatus.UNKNOWN)
-        return JobExtraction(
-            is_job=bool(data.get("is_job_related")),
-            company=str(data.get("company", "")).strip(),
-            applied_date=str(data.get("applied_date", "")).strip(),
-            status_code=int(status_code),
-        )
+def classify_configured() -> bool:
+    return llm.get_llm_config("classify").is_configured
 
 
-def _first_tool_input(msg) -> dict | None:
-    for block in msg.content:
-        if getattr(block, "type", "") == "tool_use":
-            return block.input
-    return None
+def extract_configured() -> bool:
+    return llm.get_llm_config("extract").is_configured
 
 
-def get_extractor() -> JobExtractor:
-    return JobExtractor(secrets_store.get_claude_key())
+def classify_is_job(*, subject: str, sender: str, body: str) -> bool:
+    """Cheap binary gate: is this the recipient's own job-application email?"""
+    cfg = llm.get_llm_config("classify")
+    if not cfg.is_configured:
+        raise JobExtractionUnavailable()
+
+    plain = _strip_html(body)[:_CLASSIFY_BODY_CHARS]
+    prompt = (
+        "You are a strict binary classifier. Decide whether this email is about the "
+        "RECIPIENT'S OWN job application: application received/acknowledged, online "
+        "assessment, interview invite, offer, or rejection. Job-listing digests, "
+        "marketing, newsletters, and account/security notices are NOT. "
+        "Answer with exactly one word: YES or NO.\n\n"
+        f"From: {sender}\nSubject: {subject}\n\n{plain}"
+    )
+    out = llm.complete_text(cfg, prompt, max_tokens=5).strip().lower()
+    return out.startswith("y")
+
+
+def extract(*, subject: str, sender: str, body: str) -> JobExtraction:
+    """Strong-model structured extraction of company / date / status."""
+    cfg = llm.get_llm_config("extract")
+    if not cfg.is_configured:
+        raise JobExtractionUnavailable()
+
+    plain = _strip_html(body)[:_MAX_BODY_CHARS]
+    content = (
+        "Analyze this email and call record_job_application.\n\n"
+        f"From: {sender}\nSubject: {subject}\n\n{plain}"
+    )
+    data = llm.complete_tool(cfg, content, _TOOL, max_tokens=512)
+    if data is None:
+        return JobExtraction(False, "", "", JobStatus.UNKNOWN)
+
+    status_code = _STATUS_MAP.get(str(data.get("status", "unknown")), JobStatus.UNKNOWN)
+    return JobExtraction(
+        is_job=bool(data.get("is_job_related")),
+        company=str(data.get("company", "")).strip(),
+        applied_date=str(data.get("applied_date", "")).strip(),
+        status_code=int(status_code),
+        position=str(data.get("position", "")).strip(),
+    )

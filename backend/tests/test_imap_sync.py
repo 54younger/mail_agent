@@ -76,17 +76,15 @@ def test_fetch_headers_limits(monkeypatch, full, limit, total, expected_want):
     """fetch_headers should request `total` when full, else `min(limit, total)`."""
     captured = {}
 
-    class FakeFolder:
-        def set(self, *a, **k):
-            return ("OK", [b""])
-
-        def status(self, *a, **k):
-            return {"MESSAGES": total, "UIDVALIDITY": 42}
+    class FakeClient:
+        untagged_responses = {"UIDVALIDITY": [b"42"]}
 
     class FakeBox:
         def __init__(self):
-            self.folder = FakeFolder()
-            self.client = object()
+            self.client = FakeClient()
+
+        def uids(self, *a, **k):
+            return [str(1000 + i) for i in range(total)]
 
         def fetch(self, criteria, reverse, limit, mark_seen, headers_only, bulk):
             captured["limit"] = limit

@@ -9,6 +9,7 @@ export interface SyncStatus {
   error: string | null;
   hint: string | null;
   kind: string | null;
+  detail: string | null;
 }
 
 export function useSyncStatus() {
