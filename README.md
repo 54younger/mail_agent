@@ -10,7 +10,7 @@ database, and passwords never leave your own computer.
 
 English · [简体中文](./README.zh-CN.md)
 
-🔗 App: <https://mail-agent.vercel.app/> · Source: <https://github.com/54younger/mail_agent>
+🔗 App: [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/) · Source: [https://github.com/54younger/mail_agent](https://github.com/54younger/mail_agent)
 
 </div>
 
@@ -35,18 +35,19 @@ English · [简体中文](./README.zh-CN.md)
 Mail Agent has one purpose: **tracking your job hunt from the emails you already
 receive.** It gives you three screens:
 
-| Screen | What you get |
-| --- | --- |
-| **Job board · 求职看板** | A Kanban/company view of every application. Claude reads your mail and pulls out *company · position · applied date · status*, groups repeat emails per company, and shows a stats dashboard (funnel, status donut, application trend). Statuses only move forward — a status you edit by hand is authoritative and won't be quietly downgraded by a later email. |
-| **Inbox · 收件箱** | A paginated mail reader (newest 100 per page). Open any message to read it safely, and **translate** non-English mail into English (or Chinese, Japanese, Korean, French, German, Spanish) with one click. |
-| **Settings · 设置** | Connect one or more mailboxes, paste your model API key, pick which model handles each task, tweak the extraction prompt, and choose the translation language. |
+
+| Screen                    | What you get                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Job board · 求职看板** | A Kanban/company view of every application. Claude reads your mail and pulls out*company · position · applied date · status*, groups repeat emails per company, and shows a stats dashboard (funnel, status donut, application trend). Statuses only move forward — a status you edit by hand is authoritative and won't be quietly downgraded by a later email. |
+| **Inbox · 收件箱**       | A paginated mail reader (newest 100 per page). Open any message to read it safely, and**translate** non-English mail into English (or Chinese, Japanese, Korean, French, German, Spanish) with one click.                                                                                                                                                            |
+| **Settings · 设置**      | Connect one or more mailboxes, paste your model API key, pick which model handles each task, tweak the extraction prompt, and choose the translation language.                                                                                                                                                                                                       |
 
 ## Why your data stays private
 
 Mail Agent is split in two:
 
 - A **website** (the screens above), hosted for you at
-  <https://mail-agent.vercel.app/>. It's just the interface — it stores nothing.
+  [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/). It's just the interface — it stores nothing.
 - A small **backend** that you run **on your own computer**. It holds your mailbox
   connection, your local database, and your API keys, and does all the syncing and
   extracting.
@@ -56,10 +57,44 @@ Your emails and passwords never travel to any shared server — there's nothing 
 for and no account to create. Your IMAP auth code and API keys are stored encrypted on
 your machine and are never written to the database or shared anywhere.
 
-## Get started in 3 steps
+## Get started
+
+You need to run the small backend on your own computer, then open the app in your browser.
+Pick whichever start is easier for you — **Option A needs no technical tools at all.**
+
+> **Which browsers work?** Use **Chrome, Edge, or Firefox**. Safari is not supported (it
+> blocks the secure website from talking to your local backend).
+
+### Option A — Download the app (no Docker, recommend)
+
+**1 · Download the file for your system** from the
+[**Releases page**](https://github.com/54younger/mail_agent/releases):
+
+
+| Your computer | File to download        |
+| ------------- | ----------------------- |
+| Windows       | `mailagent-windows.exe` |
+| macOS         | `mailagent-macos`       |
+| Linux         | `mailagent-linux`       |
+
+**2 · Double-click it.** A small window opens and stays open — that window *is* your
+backend running. (Leave it open while you use the app; close it to stop.) Your browser also
+opens to the app automatically.
+
+- **Windows** may show a blue "Windows protected your PC" box (the app isn't signed) →
+  click **More info → Run anyway**.
+- **macOS** may say the app is from an unidentified developer → **right-click the file →
+  Open → Open**, or run `xattr -d com.apple.quarantine mailagent-macos` once in Terminal.
+
+**3 · Open the app if it didn't already: [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/)**, then follow
+[first-run setup](#first-run-setup-in-the-app).
+
+Your data is saved automatically in a per-user folder on your computer and kept between
+runs. To upgrade later, download the newer file and double-click it.
+
+### Option B — Docker
 
 **1 · Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)** (free).
-This is what runs the little backend on your computer.
 
 **2 · Start your backend.** Open a terminal and run:
 
@@ -69,21 +104,16 @@ docker run -d --name mailagent -p 127.0.0.1:8765:8765 \
   ghcr.io/54younger/mail-agent:latest
 ```
 
-That's the whole command — no options to fill in. It downloads the backend, starts it,
-and keeps your data in a `mailagent-data` volume that survives restarts and upgrades.
+That's the whole command — no options to fill in. It keeps your data in a `mailagent-data`
+volume that survives restarts and upgrades.
 
-**3 · Open the app: <https://mail-agent.vercel.app/>**
+**3 · Open the app: [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/)**, then follow
+[first-run setup](#first-run-setup-in-the-app). If you open it before the backend is ready,
+the page shows a short "start your backend" screen and connects on its own once it's up.
 
-The website automatically connects to the backend on your computer. If you open it before
-the backend is ready, it shows a short "start your backend" screen and connects on its own
-once the container is up. Then follow [first-run setup](#first-run-setup-in-the-app).
-
-> **Which browsers work?** Use **Chrome, Edge, or Firefox**. Safari is not supported (it
-> blocks the secure website from talking to your local backend).
-
-To stop the backend later: `docker stop mailagent`. To start it again:
-`docker start mailagent`. To upgrade: `docker pull ghcr.io/54younger/mail-agent:latest`,
-then remove and re-run the container (your data in the volume is kept).
+To stop the backend later: `docker stop mailagent`; start it again: `docker start mailagent`;
+upgrade: `docker pull ghcr.io/54younger/mail-agent:latest`, then remove and re-run the
+container (your data in the volume is kept).
 
 ## First-run setup in the app
 
@@ -91,6 +121,7 @@ Once the app loads, do these **in order**. Everything happens in the browser —
 no config files to edit.
 
 **1 · Connect a mailbox** — go to **Settings · 设置 → Bind account**
+
 - Pick your provider (Gmail, Outlook, QQ, 163, 126) or choose **Other** for a custom IMAP
   server.
 - Enter your **email address** and an **app-specific auth code** — this is a code you
@@ -100,17 +131,19 @@ no config files to edit.
 - Saving connects the mailbox and starts the first sync. You can connect more than one.
 
 **2 · Add a model API key** — still in **Settings · 设置**
+
 - Simplest: paste a **Claude API key**, which is used for everything by default.
 - Advanced: configure each task separately (next step).
 
 **3 · (Optional) Choose models per task**
 The backend uses three independent roles, each with its own model and key:
 
-| Task | Default model | What it does |
-| --- | --- | --- |
-| `extract` | `claude-sonnet-5` | Reads your mail and extracts job applications |
-| `translate` | `claude-haiku-4-5` | Translates email bodies |
-| `classify` | `claude-haiku-4-5` | Lightweight classification |
+
+| Task        | Default model      | What it does                                  |
+| ----------- | ------------------ | --------------------------------------------- |
+| `extract`   | `claude-sonnet-5`  | Reads your mail and extracts job applications |
+| `translate` | `claude-haiku-4-5` | Translates email bodies                       |
+| `classify`  | `claude-haiku-4-5` | Lightweight classification                    |
 
 Each task can point at **Claude** or any **OpenAI-compatible** service (DeepSeek, Together,
 a local Ollama, …) by setting a custom base URL, model name, and key — and the extraction
@@ -206,12 +239,13 @@ reachable from the internet.
 Almost everything is configured inside the app. These environment variables exist for the
 self-host options above:
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MAIL_AGENT_HOST` | `127.0.0.1` | Backend bind host (`0.0.0.0` inside Docker) |
-| `MAIL_AGENT_PORT` | `8765` | Backend port |
-| `MAIL_AGENT_DATA_DIR` | — | Pre-set the data folder (skips the first-run folder prompt) |
-| `MAIL_AGENT_CORS_ORIGINS` | `https://mail-agent.vercel.app` (Docker) | Website origin(s) allowed to call your backend |
+
+| Variable                  | Default                                  | Purpose                                                     |
+| ------------------------- | ---------------------------------------- | ----------------------------------------------------------- |
+| `MAIL_AGENT_HOST`         | `127.0.0.1`                              | Backend bind host (`0.0.0.0` inside Docker)                 |
+| `MAIL_AGENT_PORT`         | `8765`                                   | Backend port                                                |
+| `MAIL_AGENT_DATA_DIR`     | —                                       | Pre-set the data folder (skips the first-run folder prompt) |
+| `MAIL_AGENT_CORS_ORIGINS` | `https://mail-agent.vercel.app` (Docker) | Website origin(s) allowed to call your backend              |
 
 The interface is Vite + React + TypeScript; the backend is FastAPI + SQLAlchemy + SQLite +
 imap-tools + Claude. The earlier Flutter desktop version is archived under
