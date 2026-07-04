@@ -33,7 +33,7 @@ ENV MAIL_AGENT_HOST=0.0.0.0 \
     MAIL_AGENT_PORT=8765 \
     MAIL_AGENT_DATA_DIR=/data \
     MAIL_AGENT_SECRETS_FILE_BACKEND=1 \
-    MAIL_AGENT_CORS_ORIGINS=https://mail-agent.vercel.app
+    MAIL_AGENT_CORS_ORIGINS=https://mail-agent-hazel.vercel.app
 
 EXPOSE 8765
 CMD ["python", "run.py"]

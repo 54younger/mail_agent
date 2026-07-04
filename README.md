@@ -10,7 +10,7 @@ database, and passwords never leave your own computer.
 
 English · [简体中文](./README.zh-CN.md)
 
-🔗 App: [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/) · Source: [https://github.com/54younger/mail_agent](https://github.com/54younger/mail_agent)
+🔗 App: [https://mail-agent-hazel.vercel.app/](https://mail-agent-hazel.vercel.app/) · Source: [https://github.com/54younger/mail_agent](https://github.com/54younger/mail_agent)
 
 </div>
 
@@ -47,7 +47,7 @@ receive.** It gives you three screens:
 Mail Agent is split in two:
 
 - A **website** (the screens above), hosted for you at
-  [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/). It's just the interface — it stores nothing.
+  [https://mail-agent-hazel.vercel.app/](https://mail-agent-hazel.vercel.app/). It's just the interface — it stores nothing.
 - A small **backend** that you run **on your own computer**. It holds your mailbox
   connection, your local database, and your API keys, and does all the syncing and
   extracting.
@@ -86,7 +86,7 @@ opens to the app automatically.
 - **macOS** may say the app is from an unidentified developer → **right-click the file →
   Open → Open**, or run `xattr -d com.apple.quarantine mailagent-macos` once in Terminal.
 
-**3 · Open the app if it didn't already: [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/)**, then follow
+**3 · Open the app if it didn't already: [https://mail-agent-hazel.vercel.app/](https://mail-agent-hazel.vercel.app/)**, then follow
 [first-run setup](#first-run-setup-in-the-app).
 
 Your data is saved automatically in a per-user folder on your computer and kept between
@@ -107,7 +107,7 @@ docker run -d --name mailagent -p 127.0.0.1:8765:8765 \
 That's the whole command — no options to fill in. It keeps your data in a `mailagent-data`
 volume that survives restarts and upgrades.
 
-**3 · Open the app: [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/)**, then follow
+**3 · Open the app: [https://mail-agent-hazel.vercel.app/](https://mail-agent-hazel.vercel.app/)**, then follow
 [first-run setup](#first-run-setup-in-the-app). If you open it before the backend is ready,
 the page shows a short "start your backend" screen and connects on its own once it's up.
 
@@ -245,7 +245,7 @@ self-host options above:
 | `MAIL_AGENT_HOST`         | `127.0.0.1`                              | Backend bind host (`0.0.0.0` inside Docker)                 |
 | `MAIL_AGENT_PORT`         | `8765`                                   | Backend port                                                |
 | `MAIL_AGENT_DATA_DIR`     | —                                       | Pre-set the data folder (skips the first-run folder prompt) |
-| `MAIL_AGENT_CORS_ORIGINS` | `https://mail-agent.vercel.app` (Docker) | Website origin(s) allowed to call your backend              |
+| `MAIL_AGENT_CORS_ORIGINS` | `https://mail-agent-hazel.vercel.app` (Docker) | Website origin(s) allowed to call your backend              |
 
 The interface is Vite + React + TypeScript; the backend is FastAPI + SQLAlchemy + SQLite +
 imap-tools + Claude. The earlier Flutter desktop version is archived under

@@ -19,7 +19,7 @@ import webbrowser
 
 # The hosted frontend that talks to this local backend. Kept in sync with the
 # Dockerfile's MAIL_AGENT_CORS_ORIGINS default and the README.
-HOSTED_APP_URL = "https://mail-agent.vercel.app"
+HOSTED_APP_URL = "https://mail-agent-hazel.vercel.app"
 
 # Allow the hosted site plus a local dev frontend by default. An explicit
 # MAIL_AGENT_CORS_ORIGINS env still wins (setdefault only fills when unset).

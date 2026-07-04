@@ -9,7 +9,7 @@
 
 [English](./README.md) · 简体中文
 
-🔗 应用：[https://mail-agent.vercel.app/](https://mail-agent.vercel.app/) · 源码：[https://github.com/54younger/mail_agent](https://github.com/54younger/mail_agent)
+🔗 应用：[https://mail-agent-hazel.vercel.app/](https://mail-agent-hazel.vercel.app/) · 源码：[https://github.com/54younger/mail_agent](https://github.com/54younger/mail_agent)
 
 </div>
 
@@ -45,7 +45,7 @@ Mail Agent 只做一件事：**从你已经收到的邮件里追踪整个求职�
 Mail Agent 分为两部分：
 
 - 一个**网站**（上面那些界面），已经为你托管在
-  [https://mail-agent.vercel.app/](https://mail-agent.vercel.app/)。它只是界面 —— 本身不存储任何东西。
+  [https://mail-agent-hazel.vercel.app/](https://mail-agent-hazel.vercel.app/)。它只是界面 —— 本身不存储任何东西。
 - 一个小小的**后端**，**运行在你自己的电脑上**。它保存你的邮箱连接、本地数据库和 API
   Key，并完成所有的同步与提取工作。
 
@@ -81,7 +81,7 @@ Mail Agent 分为两部分：
 - **macOS** 可能提示来自身份不明的开发者 → **右键点击文件 → 打开 → 打开**，或在终端里执行
   一次 `xattr -d com.apple.quarantine mailagent-macos`。
 
-**3 · 若浏览器未自动打开，请访问：[https://mail-agent.vercel.app/](https://mail-agent.vercel.app/)**，随后按照
+**3 · 若浏览器未自动打开，请访问：[https://mail-agent-hazel.vercel.app/](https://mail-agent-hazel.vercel.app/)**，随后按照
 [首次设置](#在应用内完成首次设置)操作。
 
 你的数据会自动保存在电脑上的一个按用户划分的文件夹里，并在多次运行之间保留。日后升级时，
@@ -102,7 +102,7 @@ docker run -d --name mailagent -p 127.0.0.1:8765:8765 \
 整条命令就是这样 —— 没有需要你填写的参数。它会把你的数据保存在 `mailagent-data` 卷里，
 重启和升级都不会丢。
 
-**3 · 打开应用：[https://mail-agent.vercel.app/](https://mail-agent.vercel.app/)**，随后按照
+**3 · 打开应用：[https://mail-agent-hazel.vercel.app/](https://mail-agent-hazel.vercel.app/)**，随后按照
 [首次设置](#在应用内完成首次设置)操作。如果你在后端就绪前就打开了它，页面会显示一个简短的
 「请启动后端」提示，并在容器运行后自动连上。
 
@@ -225,7 +225,7 @@ pnpm dev
 | `MAIL_AGENT_HOST`         | `127.0.0.1`                               | 后端绑定地址（Docker 内为`0.0.0.0`）   |
 | `MAIL_AGENT_PORT`         | `8765`                                    | 后端端口                               |
 | `MAIL_AGENT_DATA_DIR`     | ——                                      | 预设数据文件夹（跳过首次的文件夹提示） |
-| `MAIL_AGENT_CORS_ORIGINS` | `https://mail-agent.vercel.app`（Docker） | 允许调用你后端的网站来源               |
+| `MAIL_AGENT_CORS_ORIGINS` | `https://mail-agent-hazel.vercel.app`（Docker） | 允许调用你后端的网站来源               |
 
 界面基于 Vite + React + TypeScript；后端基于 FastAPI + SQLAlchemy + SQLite + imap-tools +
 Claude。此前的 Flutter 桌面版已归档在 [`legacy/`](legacy/) 目录下。路线图见 [`PLAN.md`](PLAN.md)。

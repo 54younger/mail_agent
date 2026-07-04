@@ -10,7 +10,7 @@ services:
     environment:
       # Origin(s) allowed to call this local backend. Point it at your Vercel URL
       # when the frontend is hosted there (or export MAIL_AGENT_CORS_ORIGINS).
-      MAIL_AGENT_CORS_ORIGINS: ${MAIL_AGENT_CORS_ORIGINS:-https://mail-agent.vercel.app}
+      MAIL_AGENT_CORS_ORIGINS: ${MAIL_AGENT_CORS_ORIGINS:-https://mail-agent-hazel.vercel.app}
     volumes:
       - mailagent-data:/data
     restart: unless-stopped
