@@ -3,9 +3,13 @@
 # ── 1) Frontend build ────────────────────────────────────────────────────────
 FROM node:20-alpine AS frontend
 WORKDIR /app/frontend
-RUN corepack enable
+# Install pnpm directly instead of via corepack: node:20's bundled corepack
+# ships outdated signing keys and fails to fetch pnpm ("Cannot find matching
+# keyid"), which broke `pnpm install`. Pin the same version used locally / in
+# package.json's packageManager field so builds are deterministic.
+RUN npm install -g pnpm@10.6.3
 COPY frontend/package.json frontend/pnpm-lock.yaml* ./
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm build
 
