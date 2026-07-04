@@ -14,6 +14,33 @@ export interface LLMRole {
   model: string;
   base_url: string;
   key_configured: boolean;
+  max_tokens: number;
+  temperature: number | null;
+  prompt: string;
+}
+
+export interface StatusRule {
+  keywords: string[];
+  status: string;
+}
+
+export interface JobsExclude {
+  meeting_links: string[];
+  senders: string[];
+}
+
+export interface JobsConfig {
+  keywords: string[];
+  exclude: JobsExclude;
+  company_strip_suffixes: string[];
+  company_aliases: Record<string, string>;
+  status_rules: StatusRule[];
+  default_range_days: number;
+}
+
+export interface JobStatusOption {
+  name: string;
+  code: number;
 }
 
 export interface AppSettings {
@@ -24,6 +51,8 @@ export interface AppSettings {
   providers: string[];
   auto_refresh_enabled: boolean;
   auto_refresh_minutes: number;
+  jobs: JobsConfig;
+  job_status_options: JobStatusOption[];
   data_dir: string | null;
 }
 
@@ -57,14 +86,31 @@ export interface LLMRoleUpdate {
   provider: string;
   model: string;
   base_url: string;
+  // Advanced (optional): only sent when provided so a basic save keeps them.
+  max_tokens?: number;
+  temperature?: number | null;
+  prompt?: string;
 }
 
 export function useSetLLMRole() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ role, provider, model, base_url }: LLMRoleUpdate) =>
-      api.put<AppSettings>(`/api/settings/llm/${role}`, { provider, model, base_url }),
+    mutationFn: ({ role, ...rest }: LLMRoleUpdate) =>
+      api.put<AppSettings>(`/api/settings/llm/${role}`, rest),
     onSuccess: (data) => qc.setQueryData(['settings'], data),
+  });
+}
+
+export function useSetJobsConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<JobsConfig>) =>
+      api.put<AppSettings>('/api/settings/jobs', patch),
+    onSuccess: (data) => {
+      qc.setQueryData(['settings'], data);
+      // Grouping/keywords/exclusions changed → board summary & stats are stale.
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+    },
   });
 }
 

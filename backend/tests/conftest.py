@@ -45,3 +45,7 @@ async def app_client(data_dir: Path):
     sm._state = sm.SyncState()
     em = importlib.import_module("app.services.job_extract_manager")
     em._state = em.ExtractState()
+    # Drop the mtime-keyed jobs-config cache so the next test's isolated
+    # settings.json is re-read instead of a stale build leaking across tests.
+    jc = importlib.import_module("app.services.job_config")
+    jc._cache = None

@@ -29,7 +29,7 @@ from ..schemas.job import (
     TimelineEntry,
     TrendPoint,
 )
-from ..services import job_extract_manager
+from ..services import job_config, job_extract_manager
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -101,29 +101,70 @@ def _parse_ts(ts: str) -> datetime | None:
     return _aware(dt)
 
 
-def _group_key(job: JobApplication) -> tuple[str, str]:
-    """Case/space-insensitive (company, position) key that dedups a group."""
-    return (job.company.strip().casefold(), (job.position or "").strip().casefold())
+def _group_key(job: JobApplication, cfg: job_config.JobsConfig) -> tuple[str, str]:
+    """Normalized (company, position) key that dedups a group. Company is run
+    through suffix/alias normalization so e.g. 'Sana' and 'Sanalabs' collapse."""
+    return (cfg.company_key(job.company or "")[0], (job.position or "").strip().casefold())
 
 
-def _group_jobs(jobs: list[JobApplication]) -> list[list[JobApplication]]:
+def _group_jobs(
+    jobs: list[JobApplication], cfg: job_config.JobsConfig
+) -> list[list[JobApplication]]:
     groups: dict[tuple[str, str], list[JobApplication]] = {}
     for j in jobs:
-        groups.setdefault(_group_key(j), []).append(j)
+        groups.setdefault(_group_key(j, cfg), []).append(j)
     return list(groups.values())
 
 
-def _reached_statuses(records: list[JobApplication]) -> set[int]:
-    """Every status a group has ever been in (union of timelines + current)."""
-    seen: set[int] = set()
+# Linear application stages, in order. rejected/unknown are off this ladder.
+_LINEAR_STAGES = (
+    JobStatus.APPLIED,
+    JobStatus.ONLINE_TEST,
+    JobStatus.INTERVIEW,
+    JobStatus.OFFER,
+)
+
+
+def _peak_stage(records: list[JobApplication], current: int, manually_edited: bool) -> int:
+    """Highest linear stage a group counts toward in the funnel.
+
+    A manual edit is authoritative: if the (corrected) current status is a linear
+    stage, that caps the group — so correcting a mis-classification *down* also
+    lowers the funnel/conversion (可升可降). Otherwise (pure AI, or a terminal
+    rejected/unknown current) we keep the highest linear stage the timeline ever
+    reached, so a candidate rejected *after* interviewing still counts as having
+    interviewed."""
+    if manually_edited and current in _LINEAR_STAGES:
+        return int(current)
+    peak = int(JobStatus.APPLIED)
     for r in records:
-        seen.add(r.status_code)
+        if r.status_code in _LINEAR_STAGES:
+            peak = max(peak, int(r.status_code))
         for e in _timeline(r):
-            seen.add(int(e.get("status", JobStatus.UNKNOWN)))
-    return seen
+            s = int(e.get("status", JobStatus.UNKNOWN))
+            if s in _LINEAR_STAGES:
+                peak = max(peak, s)
+    return peak
 
 
-def _summarize(records: list[JobApplication], subjects: dict[int, str]) -> ApplicationSummary:
+def _display_company(records: list[JobApplication], cfg: job_config.JobsConfig) -> str:
+    """Prefer a matched alias's canonical spelling; else the most complete raw name."""
+    for r in records:
+        _, disp = cfg.company_key(r.company or "")
+        if disp:
+            return disp
+    names = [r.company for r in records if (r.company or "").strip()]
+    return max(names, key=len) if names else ""
+
+
+def _display_position(records: list[JobApplication]) -> str:
+    positions = [r.position for r in records if (r.position or "").strip()]
+    return max(positions, key=len) if positions else ""
+
+
+def _summarize(
+    records: list[JobApplication], subjects: dict[int, str], cfg: job_config.JobsConfig
+) -> ApplicationSummary:
     ordered = sorted(records, key=lambda r: r.applied_at)
     first = ordered[0]
 
@@ -146,8 +187,8 @@ def _summarize(records: list[JobApplication], subjects: dict[int, str]) -> Appli
                 primary = r
 
     return ApplicationSummary(
-        company=first.company or "",
-        position=first.position or "",
+        company=_display_company(records, cfg),
+        position=_display_position(records),
         applied_at=_aware(first.applied_at),
         status_code=int(latest_status),
         last_update=last_update,
@@ -170,34 +211,35 @@ def _summarize(records: list[JobApplication], subjects: dict[int, str]) -> Appli
 
 @router.get("/summary", response_model=list[ApplicationSummary])
 async def list_summary(session: AsyncSession = Depends(get_session)) -> list[ApplicationSummary]:
+    cfg = job_config.load()
     jobs = (await session.execute(select(JobApplication))).scalars().all()
     subjects = await _subjects_for(session, jobs)
-    summaries = [_summarize(g, subjects) for g in _group_jobs(jobs)]
+    summaries = [_summarize(g, subjects, cfg) for g in _group_jobs(jobs, cfg)]
     summaries.sort(key=lambda s: s.last_update, reverse=True)
     return summaries
 
 
 @router.get("/stats", response_model=JobStats)
 async def job_stats(session: AsyncSession = Depends(get_session)) -> JobStats:
+    cfg = job_config.load()
     jobs = (await session.execute(select(JobApplication))).scalars().all()
-    groups = _group_jobs(jobs)
-    units = [_summarize(g, {}) for g in groups]
+    groups = _group_jobs(jobs, cfg)
+    units = [_summarize(g, {}, cfg) for g in groups]
     total = len(units)
 
     by_status: dict[int, int] = {}
     trend_map: dict[str, int] = {}
-    for u in units:
+    # Funnel: units whose progression reached each stage. Peak stage respects
+    # manual corrections (see _peak_stage), so editing a status updates the funnel
+    # and conversion rates too — not just the current-status donut.
+    reached = {code: 0 for code in (JobStatus.ONLINE_TEST, JobStatus.INTERVIEW, JobStatus.OFFER)}
+    for g, u in zip(groups, units):
         by_status[u.status_code] = by_status.get(u.status_code, 0) + 1
         day = u.applied_at.date().isoformat()
         trend_map[day] = trend_map.get(day, 0) + 1
-
-    # Funnel: how many application units ever reached each stage. "Applied" is the
-    # base (every tracked application implies an application), so its count = total.
-    reached = {code: 0 for code in (JobStatus.ONLINE_TEST, JobStatus.INTERVIEW, JobStatus.OFFER)}
-    for g in groups:
-        seen = _reached_statuses(g)
+        peak = _peak_stage(g, u.status_code, u.manually_edited)
         for code in reached:
-            if code in seen:
+            if peak >= int(code):
                 reached[code] += 1
 
     funnel = [

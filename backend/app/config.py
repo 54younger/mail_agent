@@ -174,6 +174,15 @@ def _settings_path() -> Path:
     return data_dir / "settings.json"
 
 
+def settings_mtime() -> float:
+    """Modification time of ``settings.json`` (0.0 if absent). Lets callers cache
+    derived config and refresh only when the file actually changes."""
+    try:
+        return _settings_path().stat().st_mtime
+    except (OSError, RuntimeError):
+        return 0.0
+
+
 def load_settings() -> dict[str, object]:
     try:
         raw = json.loads(_settings_path().read_text(encoding="utf-8"))

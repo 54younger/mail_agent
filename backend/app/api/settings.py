@@ -18,6 +18,9 @@ from ..schemas.settings import (
     AutoRefreshIn,
     ClaudeKeyIn,
     DataFolderChangeIn,
+    JobsConfigIn,
+    JobsConfigOut,
+    JobStatusOption,
     LLMKeyIn,
     LLMRoleIn,
     LLMRoleOut,
@@ -25,7 +28,7 @@ from ..schemas.settings import (
     TranslationTargetIn,
     TranslationTargetOption,
 )
-from ..services import llm, translation
+from ..services import job_config, job_extractor, llm, translation
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -40,10 +43,15 @@ def _current() -> SettingsOut:
         roles.append(
             LLMRoleOut(
                 role=role,
-                provider=rs["provider"],
-                model=rs["model"],
-                base_url=rs["base_url"],
+                provider=str(rs["provider"]),
+                model=str(rs["model"]),
+                base_url=str(rs["base_url"]),
                 key_configured=llm.role_key_configured(role),
+                max_tokens=int(rs["max_tokens"]),  # type: ignore[arg-type]
+                temperature=rs["temperature"],  # type: ignore[arg-type]
+                # Show the effective template so the box is editable from a real
+                # starting point rather than blank.
+                prompt=str(rs["prompt"]) or job_extractor.default_prompt(role),
             )
         )
     return SettingsOut(
@@ -57,6 +65,11 @@ def _current() -> SettingsOut:
         providers=list(llm.PROVIDERS),
         auto_refresh_enabled=bool(settings.get("auto_refresh_enabled", True)),
         auto_refresh_minutes=int(settings.get("auto_refresh_minutes", 15)),
+        jobs=JobsConfigOut(**job_config.effective_raw()),
+        job_status_options=[
+            JobStatusOption(name=name, code=int(code))
+            for name, code in job_config.STATUS_BY_NAME.items()
+        ],
         data_dir=str(data_dir) if data_dir else None,
     )
 
@@ -83,16 +96,56 @@ async def set_claude_key(payload: ClaudeKeyIn) -> SettingsOut:
 
 @router.put("/llm/{role}", response_model=SettingsOut)
 async def set_llm_role(role: str, payload: LLMRoleIn) -> SettingsOut:
+    # Forward only advanced fields the client actually sent, so a basic save keeps
+    # a stored prompt/params while an explicit value (incl. null) overwrites it.
+    advanced = {
+        f: getattr(payload, f)
+        for f in ("max_tokens", "temperature", "prompt")
+        if f in payload.model_fields_set
+    }
     try:
         await run_in_threadpool(
-            llm.set_role_settings,
-            role,
-            provider=payload.provider,
-            model=payload.model,
-            base_url=payload.base_url,
+            lambda: llm.set_role_settings(
+                role,
+                provider=payload.provider,
+                model=payload.model,
+                base_url=payload.base_url,
+                **advanced,
+            )
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    return _current()
+
+
+@router.put("/jobs", response_model=SettingsOut)
+async def set_jobs_config(payload: JobsConfigIn) -> SettingsOut:
+    # Partial update: start from the effective config and overlay provided fields
+    # so the UI can save one section without clobbering the rest.
+    current = job_config.effective_raw()
+    if payload.keywords is not None:
+        current["keywords"] = payload.keywords
+    if payload.company_strip_suffixes is not None:
+        current["company_strip_suffixes"] = payload.company_strip_suffixes
+    if payload.company_aliases is not None:
+        current["company_aliases"] = payload.company_aliases
+    if payload.default_range_days is not None:
+        current["default_range_days"] = payload.default_range_days
+    if payload.exclude is not None:
+        ex = dict(current["exclude"])
+        if payload.exclude.meeting_links is not None:
+            ex["meeting_links"] = payload.exclude.meeting_links
+        if payload.exclude.senders is not None:
+            ex["senders"] = payload.exclude.senders
+        current["exclude"] = ex
+    if payload.status_rules is not None:
+        for rule in payload.status_rules:
+            if rule.status not in job_config.STATUS_BY_NAME:
+                raise HTTPException(status_code=400, detail=f"未知的状态：{rule.status}")
+        current["status_rules"] = [
+            {"keywords": r.keywords, "status": r.status} for r in payload.status_rules
+        ]
+    await run_in_threadpool(config.save_settings, {"jobs": current})
     return _current()
 
 

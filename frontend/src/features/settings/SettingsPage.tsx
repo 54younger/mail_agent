@@ -14,6 +14,7 @@ import {
 } from '../../api/settings';
 import { PageHeader } from '../../components/PageHeader';
 import { BindAccountForm } from './BindAccountForm';
+import { JobConfigSettings } from './JobConfigSettings';
 
 const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Claude (Anthropic)',
@@ -94,6 +95,10 @@ export function SettingsPage() {
           <AiModelSettings />
         </Section>
 
+        <Section title="求职识别与规则">
+          <JobConfigSettings />
+        </Section>
+
         <Section title="翻译">
           <TranslationSettings />
         </Section>
@@ -155,7 +160,34 @@ function LLMRoleCard({ role, providers }: { role: LLMRole; providers: string[] }
   const [baseUrl, setBaseUrl] = useState(role.base_url);
   const [keyInput, setKeyInput] = useState('');
 
-  const dirty = provider !== role.provider || model !== role.model || baseUrl !== role.base_url;
+  const tempStr = role.temperature == null ? '' : String(role.temperature);
+  const [maxTokens, setMaxTokens] = useState(String(role.max_tokens));
+  const [temperature, setTemperature] = useState(tempStr);
+  const [prompt, setPrompt] = useState(role.prompt);
+  const [advOpen, setAdvOpen] = useState(false);
+  const showPrompt = role.role !== 'translate';
+
+  const dirty =
+    provider !== role.provider ||
+    model !== role.model ||
+    baseUrl !== role.base_url ||
+    maxTokens !== String(role.max_tokens) ||
+    temperature !== tempStr ||
+    (showPrompt && prompt !== role.prompt);
+
+  const save = () => {
+    const mt = Number(maxTokens);
+    setRole.mutate({
+      role: role.role,
+      provider,
+      model,
+      base_url: baseUrl,
+      max_tokens: maxTokens.trim() && mt > 0 ? mt : role.max_tokens,
+      // Explicit null clears back to the provider default.
+      temperature: temperature.trim() === '' ? null : Number(temperature),
+      ...(showPrompt ? { prompt } : {}),
+    });
+  };
 
   return (
     <div className="rounded-lg border border-slate-200 p-4">
@@ -200,9 +232,59 @@ function LLMRoleCard({ role, providers }: { role: LLMRole; providers: string[] }
         </label>
       )}
 
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => setAdvOpen((o) => !o)}
+          className="text-xs text-slate-500 hover:text-slate-800"
+        >
+          {advOpen ? '▾' : '▸'} 高级（max_tokens / temperature{showPrompt ? ' / Prompt' : ''}）
+        </button>
+        {advOpen && (
+          <div className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">max_tokens</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={maxTokens}
+                  onChange={(e) => setMaxTokens(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">
+                  temperature（留空=厂商默认）
+                </span>
+                <input
+                  value={temperature}
+                  onChange={(e) => setTemperature(e.target.value)}
+                  placeholder="默认"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                />
+              </label>
+            </div>
+            {showPrompt && (
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">
+                  Prompt 模板（占位符 {'{sender}'} {'{subject}'} {'{body}'}）
+                </span>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={5}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-slate-900"
+                />
+              </label>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="mt-3 flex items-center gap-2">
         <button
-          onClick={() => setRole.mutate({ role: role.role, provider, model, base_url: baseUrl })}
+          onClick={save}
           disabled={!dirty || !model.trim() || setRole.isPending}
           className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
         >

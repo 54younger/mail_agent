@@ -10,25 +10,29 @@ import {
   useJobSummary,
   useTriggerExtract,
 } from '../../api/jobs';
+import { useSettings } from '../../api/settings';
 import { JOB_STATUSES, statusMeta } from '../../lib/jobStatus';
 import { CompanyTable } from './CompanyTable';
 import { ExtractProgress } from './ExtractProgress';
 import { JobDrawer } from './JobDrawer';
 import { StatsDashboard } from './StatsDashboard';
 
-type RangePreset = '30' | '90' | 'all' | 'custom';
+type RangePreset = 'default' | '30' | '90' | 'all' | 'custom';
 
 export function BoardPage() {
   const qc = useQueryClient();
   const summary = useJobSummary();
   const stats = useJobStats();
+  const settings = useSettings();
   const extractStatus = useExtractStatus();
   const triggerExtract = useTriggerExtract();
+
+  const defaultDays = settings.data?.jobs.default_range_days ?? 90;
 
   const [selected, setSelected] = useState<ApplicationSummary | null>(null);
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [preset, setPreset] = useState<RangePreset>('90');
+  const [preset, setPreset] = useState<RangePreset>('default');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
@@ -59,7 +63,7 @@ export function BoardPage() {
       if (customEnd) r.until = new Date(`${customEnd}T23:59:59`).toISOString();
       return r;
     }
-    const days = preset === '30' ? 30 : 90;
+    const days = preset === 'default' ? defaultDays : preset === '30' ? 30 : 90;
     return { since: new Date(Date.now() - days * 86_400_000).toISOString() };
   };
 
@@ -87,6 +91,7 @@ export function BoardPage() {
             title="抽取的邮件时间范围"
             className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-slate-900 disabled:opacity-50"
           >
+            <option value="default">默认（{defaultDays} 天）</option>
             <option value="90">近 90 天</option>
             <option value="30">近 30 天</option>
             <option value="all">全部</option>

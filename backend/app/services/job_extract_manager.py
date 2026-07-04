@@ -28,7 +28,7 @@ from sqlalchemy import func, select
 
 from .. import db, secrets_store
 from ..models import Account, EmailMessage, JobApplication
-from . import imap_sync, job_extractor, job_keywords
+from . import imap_sync, job_config, job_extractor, job_keywords
 from .job_extractor import JobExtractionUnavailable
 
 _BATCH_SIZE = 50
@@ -117,6 +117,25 @@ def _parse_iso(s: str) -> datetime | None:
     return None
 
 
+async def _existing_status_index(
+    session, cfg: job_config.JobsConfig
+) -> dict[tuple[str, str], set[int]]:
+    """Map each normalized (company, position) group to the set of status codes it
+    already has a record for — the basis for same-stage dedup during a scan."""
+    rows = (
+        await session.execute(
+            select(
+                JobApplication.company, JobApplication.position, JobApplication.status_code
+            )
+        )
+    ).all()
+    index: dict[tuple[str, str], set[int]] = {}
+    for company, position, status_code in rows:
+        key = (cfg.company_key(company or "")[0], (position or "").strip().casefold())
+        index.setdefault(key, set()).add(int(status_code))
+    return index
+
+
 async def start_extract(
     since: datetime | None = None, until: datetime | None = None
 ) -> bool:
@@ -181,6 +200,12 @@ async def _run(since: datetime | None, until: datetime | None) -> None:
             _state.total = scan_total
             _state.current = 0
 
+            cfg = job_config.load()
+            # Same-stage dedup: index the (company, position) status codes that
+            # already exist so a second email at a stage we've recorded (e.g. an
+            # interview invite after "you advanced to interview") makes no new row.
+            existing = await _existing_status_index(session, cfg)
+
             while True:
                 # Re-query each round: screened rows drop out of the filter, so
                 # this walks toward older mail until no candidates remain.
@@ -215,7 +240,7 @@ async def _run(since: datetime | None, until: datetime | None) -> None:
                     )
 
                 sem = asyncio.Semaphore(_CONCURRENCY)
-                results = await asyncio.gather(*(_process_one(it, sem) for it in items))
+                results = await asyncio.gather(*(_process_one(it, sem, cfg) for it in items))
 
                 # Serial DB apply (workers never touch the session).
                 for r in results:
@@ -223,22 +248,30 @@ async def _run(since: datetime | None, until: datetime | None) -> None:
                     if r.fetched_body:
                         email.body_text = r.fetched_body
                     email.job_screened = r.screen
-                    if r.screen == job_extractor.SCREEN_LINKED:
-                        applied = _parse_iso(r.applied_date) or email.date
-                        session.add(
-                            JobApplication(
-                                company=r.company,
-                                position=r.position,
-                                applied_at=applied,
-                                status_code=r.status_code,
-                                email_id=email.id,
-                                manually_edited=False,
-                                timeline_json=json.dumps(
-                                    [{"status": r.status_code, "ts": applied.isoformat()}]
-                                ),
-                            )
+                    if r.screen != job_extractor.SCREEN_LINKED:
+                        continue
+                    group = (cfg.company_key(r.company)[0], (r.position or "").strip().casefold())
+                    seen = existing.setdefault(group, set())
+                    if r.status_code in seen:
+                        # Duplicate of a stage we already track — screen it, no row.
+                        email.job_screened = job_extractor.SCREEN_EXCLUDED
+                        continue
+                    seen.add(r.status_code)
+                    applied = _parse_iso(r.applied_date) or email.date
+                    session.add(
+                        JobApplication(
+                            company=r.company,
+                            position=r.position,
+                            applied_at=applied,
+                            status_code=r.status_code,
+                            email_id=email.id,
+                            manually_edited=False,
+                            timeline_json=json.dumps(
+                                [{"status": r.status_code, "ts": applied.isoformat()}]
+                            ),
                         )
-                        _state.created += 1
+                    )
+                    _state.created += 1
                 await session.commit()
                 session.expunge_all()  # bound memory over large mailboxes
 
@@ -312,13 +345,15 @@ async def _cache_bodies(session, since, until, accounts, password_for) -> None:
         session.expunge_all()  # release cached bodies from the identity map
 
 
-async def _process_one(item: _Item, sem: asyncio.Semaphore) -> _Result:
+async def _process_one(
+    item: _Item, sem: asyncio.Semaphore, cfg: job_config.JobsConfig
+) -> _Result:
     """Pure-data pipeline for one email; no ORM/session access (concurrency-safe)."""
     async with sem:
         try:
             # Stage 0 — keyword pre-filter on subject + cached body (free, no IMAP).
             _state.stage = STAGE_KEYWORD
-            if not job_keywords.looks_like_candidate(item.subject, item.body):
+            if not job_keywords.looks_like_candidate(item.subject, item.body, cfg):
                 return _Result(item.id, job_extractor.SCREEN_NOT_JOB)
 
             body = item.body
@@ -334,6 +369,11 @@ async def _process_one(item: _Item, sem: asyncio.Semaphore) -> _Result:
                     item.uid,
                 )
                 fetched = body
+
+            # Exclusion rules (e.g. a Google Meet invite that just duplicates the
+            # "you advanced to interview" email) — screened, no record created.
+            if cfg.is_excluded(subject=item.subject, sender=item.sender, body=body or ""):
+                return _Result(item.id, job_extractor.SCREEN_EXCLUDED, fetched_body=fetched)
 
             # Stage 1 — cheap model binary classify.
             _state.stage = STAGE_CLASSIFY

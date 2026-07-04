@@ -23,6 +23,9 @@ def test_set_and_get_role_config(data_dir):
         "provider": "openai_compatible",
         "model": "deepseek-chat",
         "base_url": "https://x/v1",
+        "max_tokens": 1024,  # extract default
+        "temperature": None,
+        "prompt": "",
     }
 
 

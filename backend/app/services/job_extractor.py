@@ -19,26 +19,49 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..models import JobStatus
-from . import llm
+from . import job_config, llm
+from .job_config import STATUS_BY_NAME as _STATUS_MAP
 from .translation import _strip_html
 
 # email_message.job_screened states.
 SCREEN_UNSCREENED = 0  # not yet run through the pipeline
 SCREEN_NOT_JOB = 1  # keyword/classify/extract decided it isn't a job email
 SCREEN_LINKED = 2  # a JobApplication was created for it
+SCREEN_EXCLUDED = 3  # matched an exclusion rule (e.g. Google Meet) — no record
 
 _CLASSIFY_BODY_CHARS = 2_000
 _MAX_BODY_CHARS = 8_000
 
-# Claude's status string -> JobStatus code.
-_STATUS_MAP: dict[str, int] = {
-    "applied": JobStatus.APPLIED,
-    "online_test": JobStatus.ONLINE_TEST,
-    "interview": JobStatus.INTERVIEW,
-    "offer": JobStatus.OFFER,
-    "rejected": JobStatus.REJECTED,
-    "unknown": JobStatus.UNKNOWN,
-}
+# Built-in prompt templates (user-overridable per role in Settings). Placeholders
+# {sender}/{subject}/{body} are filled at call time.
+DEFAULT_CLASSIFY_PROMPT = (
+    "You are a strict binary classifier. Decide whether this email is about the "
+    "RECIPIENT'S OWN job application: application received/acknowledged, online "
+    "assessment, interview invite, offer, or rejection. Job-listing digests, "
+    "marketing, newsletters, and account/security notices are NOT. "
+    "Answer with exactly one word: YES or NO.\n\n"
+    "From: {sender}\nSubject: {subject}\n\n{body}"
+)
+DEFAULT_EXTRACT_PROMPT = (
+    "Analyze this email and call record_job_application. Note: an automated/AI "
+    "screening interview (e.g. 'AI面试', 'AI interview') counts as an online "
+    "assessment, not a live interview.\n\n"
+    "From: {sender}\nSubject: {subject}\n\n{body}"
+)
+
+
+def default_prompt(role: str) -> str:
+    """The built-in template for a role, so Settings can seed an editable box."""
+    return {"classify": DEFAULT_CLASSIFY_PROMPT, "extract": DEFAULT_EXTRACT_PROMPT}.get(role, "")
+
+
+def _render(template: str, *, sender: str, subject: str, body: str) -> str:
+    """Fill a prompt template. Tolerates a broken/unknown placeholder in a
+    user-edited template by appending the email instead of raising."""
+    try:
+        return template.format(sender=sender, subject=subject, body=body)
+    except (KeyError, IndexError, ValueError):
+        return f"{template}\n\nFrom: {sender}\nSubject: {subject}\n\n{body}"
 
 _TOOL = {
     "name": "record_job_application",
@@ -103,15 +126,8 @@ def classify_is_job(*, subject: str, sender: str, body: str) -> bool:
         raise JobExtractionUnavailable()
 
     plain = _strip_html(body)[:_CLASSIFY_BODY_CHARS]
-    prompt = (
-        "You are a strict binary classifier. Decide whether this email is about the "
-        "RECIPIENT'S OWN job application: application received/acknowledged, online "
-        "assessment, interview invite, offer, or rejection. Job-listing digests, "
-        "marketing, newsletters, and account/security notices are NOT. "
-        "Answer with exactly one word: YES or NO.\n\n"
-        f"From: {sender}\nSubject: {subject}\n\n{plain}"
-    )
-    out = llm.complete_text(cfg, prompt, max_tokens=5).strip().lower()
+    prompt = _render(cfg.prompt or DEFAULT_CLASSIFY_PROMPT, sender=sender, subject=subject, body=plain)
+    out = llm.complete_text(cfg, prompt).strip().lower()
     return out.startswith("y")
 
 
@@ -122,15 +138,19 @@ def extract(*, subject: str, sender: str, body: str) -> JobExtraction:
         raise JobExtractionUnavailable()
 
     plain = _strip_html(body)[:_MAX_BODY_CHARS]
-    content = (
-        "Analyze this email and call record_job_application.\n\n"
-        f"From: {sender}\nSubject: {subject}\n\n{plain}"
-    )
-    data = llm.complete_tool(cfg, content, _TOOL, max_tokens=512)
+    content = _render(cfg.prompt or DEFAULT_EXTRACT_PROMPT, sender=sender, subject=subject, body=plain)
+    data = llm.complete_tool(cfg, content, _TOOL)
     if data is None:
         return JobExtraction(False, "", "", JobStatus.UNKNOWN)
 
     status_code = _STATUS_MAP.get(str(data.get("status", "unknown")), JobStatus.UNKNOWN)
+    # Deterministic keyword overrides (e.g. domestic "AI面试" is really an online
+    # assessment, which the model often mislabels as a live interview). Terminal
+    # outcomes (offer/rejected) win over a keyword hint so a rejection that merely
+    # mentions an AI interview isn't downgraded to "assessment".
+    override = job_config.load().status_override(subject=subject, body=plain)
+    if override is not None and status_code not in (JobStatus.OFFER, JobStatus.REJECTED):
+        status_code = override
     return JobExtraction(
         is_job=bool(data.get("is_job_related")),
         company=str(data.get("company", "")).strip(),

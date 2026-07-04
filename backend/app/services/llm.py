@@ -28,11 +28,24 @@ PROVIDERS = (PROVIDER_ANTHROPIC, PROVIDER_OPENAI, PROVIDER_OPENAI_COMPATIBLE)
 ROLES = ("translate", "classify", "extract")
 
 # Per-role defaults. Cheap tiers use Haiku; extraction defaults to a stronger
-# model. Users override any of these in Settings.
-_DEFAULT_ROLE_CONFIG: dict[str, dict[str, str]] = {
-    "translate": {"provider": PROVIDER_ANTHROPIC, "model": "claude-haiku-4-5-20251001", "base_url": ""},
-    "classify": {"provider": PROVIDER_ANTHROPIC, "model": "claude-haiku-4-5-20251001", "base_url": ""},
-    "extract": {"provider": PROVIDER_ANTHROPIC, "model": "claude-sonnet-5", "base_url": ""},
+# model. ``max_tokens`` sizes the output budget per role; ``temperature`` is
+# ``None`` meaning "use the provider default" (and, importantly, never sent to
+# reasoning models that reject a custom temperature); ``prompt`` is empty meaning
+# "use the role's built-in template" (the domain defaults live in the caller,
+# e.g. ``job_extractor``). Users override any of these in Settings.
+_DEFAULT_ROLE_CONFIG: dict[str, dict[str, object]] = {
+    "translate": {
+        "provider": PROVIDER_ANTHROPIC, "model": "claude-haiku-4-5-20251001",
+        "base_url": "", "max_tokens": 4096, "temperature": None, "prompt": "",
+    },
+    "classify": {
+        "provider": PROVIDER_ANTHROPIC, "model": "claude-haiku-4-5-20251001",
+        "base_url": "", "max_tokens": 8, "temperature": None, "prompt": "",
+    },
+    "extract": {
+        "provider": PROVIDER_ANTHROPIC, "model": "claude-sonnet-5",
+        "base_url": "", "max_tokens": 1024, "temperature": None, "prompt": "",
+    },
 }
 
 
@@ -50,6 +63,9 @@ class LLMConfig:
     model: str
     base_url: str
     api_key: str
+    max_tokens: int = 4096
+    temperature: float | None = None
+    prompt: str = ""  # per-role prompt template ("" = caller's built-in default)
 
     @property
     def is_configured(self) -> bool:
@@ -63,19 +79,39 @@ def _role_secret_key(role: str) -> str:
     return f"llm_key::{role}"
 
 
-def role_settings(role: str) -> dict[str, str]:
-    """Non-secret provider/model/base_url for a role, merged over defaults."""
+def _coerce_int(value: object, fallback: int) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _coerce_temp(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def role_settings(role: str) -> dict[str, object]:
+    """Non-secret config for a role (provider/model/base_url + max_tokens/
+    temperature/prompt), merged over defaults."""
     defaults = _DEFAULT_ROLE_CONFIG.get(role, _DEFAULT_ROLE_CONFIG["extract"])
     raw = config.load_settings().get("llm", {})
     stored = raw.get(role, {}) if isinstance(raw, dict) else {}
     merged = {**defaults, **(stored if isinstance(stored, dict) else {})}
     provider = str(merged.get("provider") or defaults["provider"])
     if provider not in PROVIDERS:
-        provider = defaults["provider"]
+        provider = str(defaults["provider"])
     return {
         "provider": provider,
         "model": str(merged.get("model") or ""),
         "base_url": str(merged.get("base_url") or ""),
+        "max_tokens": _coerce_int(merged.get("max_tokens"), int(defaults["max_tokens"])),  # type: ignore[arg-type]
+        "temperature": _coerce_temp(merged.get("temperature")),
+        "prompt": str(merged.get("prompt") or ""),
     }
 
 
@@ -94,7 +130,13 @@ def role_key_configured(role: str) -> bool:
 def get_llm_config(role: str) -> LLMConfig:
     s = role_settings(role)
     return LLMConfig(
-        provider=s["provider"], model=s["model"], base_url=s["base_url"], api_key=_resolve_key(role)
+        provider=str(s["provider"]),
+        model=str(s["model"]),
+        base_url=str(s["base_url"]),
+        api_key=_resolve_key(role),
+        max_tokens=int(s["max_tokens"]),  # type: ignore[arg-type]
+        temperature=s["temperature"],  # type: ignore[arg-type]
+        prompt=str(s["prompt"]),
     )
 
 
@@ -102,29 +144,55 @@ def set_role_key(role: str, value: str) -> None:
     secrets_store.set_secret(_role_secret_key(role), value)
 
 
-def set_role_settings(role: str, *, provider: str, model: str, base_url: str) -> None:
+# Sentinel so callers can distinguish "leave unchanged" from "set to None/clear".
+_UNSET: object = object()
+
+
+def set_role_settings(
+    role: str,
+    *,
+    provider: str,
+    model: str,
+    base_url: str,
+    max_tokens: object = _UNSET,
+    temperature: object = _UNSET,
+    prompt: object = _UNSET,
+) -> None:
     if role not in ROLES:
         raise ValueError("未知的模型用途")
     if provider not in PROVIDERS:
         raise ValueError("不支持的厂商")
     llm = dict(config.load_settings().get("llm", {}) or {})
-    llm[role] = {"provider": provider, "model": model.strip(), "base_url": base_url.strip()}
+    prev = llm.get(role, {}) if isinstance(llm.get(role), dict) else {}
+    # Advanced fields only change when explicitly supplied, so a basic save (which
+    # omits them) keeps a stored prompt/params — while an explicit ``None`` on
+    # temperature clears it back to the provider default.
+    entry: dict[str, object] = {
+        "provider": provider,
+        "model": model.strip(),
+        "base_url": base_url.strip(),
+        "max_tokens": prev.get("max_tokens") if max_tokens is _UNSET else max_tokens,
+        "temperature": prev.get("temperature") if temperature is _UNSET else temperature,
+        "prompt": (prev.get("prompt", "") if prompt is _UNSET else prompt) or "",
+    }
+    llm[role] = entry
     config.save_settings({"llm": llm})
 
 
 # ── Completion entry points ──────────────────────────────────────────────────
 
 
-def complete_text(cfg: LLMConfig, prompt: str, *, max_tokens: int = 4096) -> str:
+def complete_text(cfg: LLMConfig, prompt: str, *, max_tokens: int | None = None) -> str:
     if not cfg.is_configured:
         raise LLMUnavailable()
+    budget = cfg.max_tokens if max_tokens is None else max_tokens
     if cfg.provider == PROVIDER_ANTHROPIC:
-        return _anthropic_text(cfg, prompt, max_tokens)
-    return _openai_text(cfg, prompt, max_tokens)
+        return _anthropic_text(cfg, prompt, budget)
+    return _openai_text(cfg, prompt, budget)
 
 
 def complete_tool(
-    cfg: LLMConfig, prompt: str, tool_schema: dict, *, max_tokens: int = 512
+    cfg: LLMConfig, prompt: str, tool_schema: dict, *, max_tokens: int | None = None
 ) -> dict | None:
     """Force a single tool/function call and return its parsed arguments.
 
@@ -134,9 +202,16 @@ def complete_tool(
     """
     if not cfg.is_configured:
         raise LLMUnavailable()
+    budget = cfg.max_tokens if max_tokens is None else max_tokens
     if cfg.provider == PROVIDER_ANTHROPIC:
-        return _anthropic_tool(cfg, prompt, tool_schema, max_tokens)
-    return _openai_tool(cfg, prompt, tool_schema, max_tokens)
+        return _anthropic_tool(cfg, prompt, tool_schema, budget)
+    return _openai_tool(cfg, prompt, tool_schema, budget)
+
+
+def _temp_kwargs(cfg: LLMConfig) -> dict[str, float]:
+    """Only send ``temperature`` when the user set one — reasoning models reject a
+    non-default temperature, so an unset (None) value keeps prior behavior."""
+    return {} if cfg.temperature is None else {"temperature": cfg.temperature}
 
 
 # ── Anthropic ────────────────────────────────────────────────────────────────
@@ -153,6 +228,7 @@ def _anthropic_text(cfg: LLMConfig, prompt: str, max_tokens: int) -> str:
         model=cfg.model,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
+        **_temp_kwargs(cfg),
     )
     parts = [b.text for b in msg.content if getattr(b, "type", "") == "text"]
     return "\n".join(parts).strip()
@@ -165,6 +241,7 @@ def _anthropic_tool(cfg: LLMConfig, prompt: str, tool_schema: dict, max_tokens: 
         tools=[tool_schema],
         tool_choice={"type": "tool", "name": tool_schema["name"]},
         messages=[{"role": "user", "content": prompt}],
+        **_temp_kwargs(cfg),
     )
     for block in msg.content:
         if getattr(block, "type", "") == "tool_use":
@@ -215,6 +292,7 @@ def _openai_text(cfg: LLMConfig, prompt: str, max_tokens: int) -> str:
         max_tokens,
         model=cfg.model,
         messages=[{"role": "user", "content": prompt}],
+        **_temp_kwargs(cfg),
     )
     return (resp.choices[0].message.content or "").strip()
 
@@ -235,6 +313,7 @@ def _openai_tool(cfg: LLMConfig, prompt: str, tool_schema: dict, max_tokens: int
         tools=[fn],
         tool_choice={"type": "function", "function": {"name": tool_schema["name"]}},
         messages=[{"role": "user", "content": prompt}],
+        **_temp_kwargs(cfg),
     )
     calls = resp.choices[0].message.tool_calls
     if not calls:

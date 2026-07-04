@@ -139,18 +139,27 @@ async def test_extract_caches_body_improves_recall(app_client, monkeypatch):
 
 
 async def test_extract_processes_all_across_batches(app_client, monkeypatch):
-    from app.services import imap_sync, job_extract_manager
+    from app.services import imap_sync, job_extract_manager, job_extractor
 
     monkeypatch.setattr(job_extract_manager, "_BATCH_SIZE", 2)
     monkeypatch.setattr(job_extract_manager, "_CONCURRENCY", 2)
 
     base = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    # Distinct companies so same-stage dedup doesn't collapse them — this test
+    # verifies every batch is processed, not dedup.
     rows = [
-        imap_sync.EmailRow(str(i), "INBOX", "hr@acme.com", "me@x.com", "Application received", base)
+        imap_sync.EmailRow(str(i), "INBOX", "hr@acme.com", "me@x.com", f"Application at Co{i}", base)
         for i in range(5)
     ]
     await _seed_account_and_emails(app_client, monkeypatch, rows)
-    _stub_pipeline(monkeypatch)
+    monkeypatch.setattr(job_extractor, "classify_configured", lambda: True)
+    monkeypatch.setattr(job_extractor, "extract_configured", lambda: True)
+    monkeypatch.setattr(job_extractor, "classify_is_job", lambda **k: True)
+    monkeypatch.setattr(
+        job_extractor,
+        "extract",
+        lambda **k: job_extractor.JobExtraction(True, k["subject"], "", 0),
+    )
 
     # 5 candidates, batch size 2 → 3 batches; all should be processed.
     await app_client.post("/api/jobs/extract")
@@ -214,9 +223,11 @@ async def test_stats_trend_and_funnel(app_client):
     assert trend == {"2026-06-01": 2, "2026-06-02": 1}
     funnel = {f["status_code"]: f["count"] for f in stats["funnel"]}
     assert funnel[0] == 3  # applied is the base
-    assert funnel[2] == 1  # A reached interview
-    assert funnel[3] == 1  # C reached offer
-    assert abs(stats["interview_rate"] - 1 / 3) < 1e-6
+    # The funnel is a monotonic ladder: an offer (C) implies interview was passed,
+    # so both A (interview) and C (offer) count toward the interview stage.
+    assert funnel[2] == 2  # A + C reached (at least) interview
+    assert funnel[3] == 1  # only C reached offer
+    assert abs(stats["interview_rate"] - 2 / 3) < 1e-6
     assert abs(stats["offer_rate"] - 1 / 3) < 1e-6
 
 
@@ -241,6 +252,81 @@ async def test_extract_captures_position(app_client, monkeypatch):
     summary = (await app_client.get("/api/jobs/summary")).json()
     assert len(summary) == 1
     assert summary[0]["position"] == "Backend Engineer"
+
+
+async def test_summary_merges_similar_companies(app_client):
+    # "Sana" and "Sanalabs" normalize to the same company → one deduped row.
+    await app_client.post(
+        "/api/jobs",
+        json={"company": "Sana", "status_code": 0, "applied_at": "2026-06-01T00:00:00+00:00"},
+    )
+    await app_client.post(
+        "/api/jobs",
+        json={"company": "Sanalabs", "status_code": 2, "applied_at": "2026-06-05T00:00:00+00:00"},
+    )
+    rows = (await app_client.get("/api/jobs/summary")).json()
+    assert len(rows) == 1
+    assert rows[0]["count"] == 2
+
+
+async def test_manual_edit_updates_funnel(app_client):
+    # A correcting *down-edit* must lower the funnel/conversion (可升可降).
+    r = await app_client.post(
+        "/api/jobs",
+        json={"company": "A", "status_code": 2, "applied_at": "2026-06-01T00:00:00+00:00"},
+    )
+    job = r.json()
+    stats = (await app_client.get("/api/jobs/stats")).json()
+    assert abs(stats["interview_rate"] - 1.0) < 1e-6
+
+    await app_client.patch(f"/api/jobs/{job['id']}/status", json={"status_code": 0})
+    stats = (await app_client.get("/api/jobs/stats")).json()
+    assert stats["interview_rate"] == 0.0
+    funnel = {f["status_code"]: f["count"] for f in stats["funnel"]}
+    assert funnel[2] == 0
+
+
+async def test_extract_excludes_meeting_link(app_client, monkeypatch):
+    from app.services import imap_sync
+
+    base = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    rows = [imap_sync.EmailRow("30", "INBOX", "hr@acme.com", "me@x.com", "Interview invite", base)]
+    await _seed_account_and_emails(app_client, monkeypatch, rows)
+    # The cached body carries a Google Meet link → excluded before classify/extract.
+    monkeypatch.setattr(
+        imap_sync, "fetch_bodies", lambda *a, **k: {"30": "Join https://meet.google.com/abc 面试"}
+    )
+    _stub_pipeline(monkeypatch)  # would extract a job if it weren't excluded
+
+    await app_client.post("/api/jobs/extract")
+    status = await _wait_extract(app_client)
+    assert status["created"] == 0
+    assert (await app_client.get("/api/jobs")).json() == []
+
+
+async def test_extract_dedups_same_stage(app_client, monkeypatch):
+    from app.services import imap_sync, job_extractor
+
+    base = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    rows = [
+        imap_sync.EmailRow("41", "INBOX", "hr@acme.com", "me@x.com", "Interview invite", base),
+        imap_sync.EmailRow("42", "INBOX", "hr@acme.com", "me@x.com", "Entering interview stage", base),
+    ]
+    await _seed_account_and_emails(app_client, monkeypatch, rows)
+    monkeypatch.setattr(job_extractor, "classify_configured", lambda: True)
+    monkeypatch.setattr(job_extractor, "extract_configured", lambda: True)
+    monkeypatch.setattr(job_extractor, "classify_is_job", lambda **k: True)
+    # Both emails extract to the same company + interview stage.
+    monkeypatch.setattr(
+        job_extractor, "extract", lambda **k: job_extractor.JobExtraction(True, "Acme", "", 2)
+    )
+
+    await app_client.post("/api/jobs/extract")
+    status = await _wait_extract(app_client)
+    assert status["created"] == 1  # second interview email is deduped, not double-counted
+    summary = (await app_client.get("/api/jobs/summary")).json()
+    assert len(summary) == 1
+    assert summary[0]["count"] == 1
 
 
 async def _wait_sync(app_client):
