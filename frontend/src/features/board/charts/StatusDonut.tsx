@@ -1,4 +1,5 @@
-import { JOB_STATUSES, statusMeta } from '../../../lib/jobStatus';
+import { JOB_STATUSES, statusLabel } from '../../../lib/jobStatus';
+import { useI18n } from '../../../i18n/useI18n';
 
 // Current-status distribution as a donut. `byStatus` maps status_code -> count
 // (keys arrive as strings from JSON). Center shows the total.
@@ -12,6 +13,7 @@ const STROKE = 22;
 const C = 2 * Math.PI * R;
 
 export function StatusDonut({ byStatus }: Props) {
+  const { t } = useI18n();
   const entries = JOB_STATUSES.map((s) => ({ meta: s, count: byStatus[String(s.code)] ?? 0 })).filter(
     (e) => e.count > 0,
   );
@@ -19,8 +21,8 @@ export function StatusDonut({ byStatus }: Props) {
 
   if (total === 0) {
     return (
-      <div className="flex h-[160px] items-center justify-center text-sm text-slate-400">
-        暂无数据
+      <div className="flex h-[160px] items-center justify-center text-sm text-ink-mute">
+        {t('charts.donutEmpty')}
       </div>
     );
   }
@@ -29,7 +31,7 @@ export function StatusDonut({ byStatus }: Props) {
   return (
     <div className="flex items-center gap-4">
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-40 w-40 shrink-0 -rotate-90">
-        <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="#f1f5f9" strokeWidth={STROKE} />
+        <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="#efeef6" strokeWidth={STROKE} />
         {entries.map((e) => {
           const frac = e.count / total;
           const dash = frac * C;
@@ -51,11 +53,11 @@ export function StatusDonut({ byStatus }: Props) {
           return seg;
         })}
         <g transform={`rotate(90 ${SIZE / 2} ${SIZE / 2})`}>
-          <text x={SIZE / 2} y={SIZE / 2 - 2} textAnchor="middle" className="fill-slate-900 text-[22px] font-semibold">
+          <text x={SIZE / 2} y={SIZE / 2 - 2} textAnchor="middle" fill="#16151f" className="text-[22px] font-semibold">
             {total}
           </text>
-          <text x={SIZE / 2} y={SIZE / 2 + 16} textAnchor="middle" className="fill-slate-400 text-[10px]">
-            投递单位
+          <text x={SIZE / 2} y={SIZE / 2 + 16} textAnchor="middle" fill="#86848f" className="text-[10px]">
+            {t('charts.donutCenter')}
           </text>
         </g>
       </svg>
@@ -64,8 +66,8 @@ export function StatusDonut({ byStatus }: Props) {
         {entries.map((e) => (
           <li key={e.meta.code} className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: e.meta.hex }} />
-            <span className="text-slate-600">{statusMeta(e.meta.code).label}</span>
-            <span className="tabular-nums font-medium text-slate-800">{e.count}</span>
+            <span className="text-ink-soft">{statusLabel(e.meta.code, t)}</span>
+            <span className="tabular-nums font-medium text-ink">{e.count}</span>
           </li>
         ))}
       </ul>

@@ -15,7 +15,7 @@ export class ApiError extends Error {
   kind?: string;
 
   constructor(status: number, body: ApiErrorBody) {
-    super(body.message || body.detail || `请求失败（${status}）`);
+    super(body.message || body.detail || `Request failed (${status})`);
     this.status = status;
     this.hint = body.hint;
     this.kind = body.kind;

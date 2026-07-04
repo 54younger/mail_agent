@@ -1,23 +1,23 @@
 import { useSyncStatus } from '../api/sync';
+import { useI18n } from '../i18n/useI18n';
 
 // Thin top progress bar shown while a sync runs; an error banner otherwise.
 export function SyncBar() {
   const { data } = useSyncStatus();
+  const { t } = useI18n();
   if (!data) return null;
 
   if (data.running) {
     const pct = data.total > 0 ? Math.round((data.fetched / data.total) * 100) : 0;
     return (
-      <div className="border-b border-slate-200 bg-white px-6 py-2">
-        <div className="flex items-center justify-between text-xs text-slate-500">
-          <span>
-            正在同步邮件… {data.fetched}/{data.total || '?'}
-          </span>
-          <span>{pct}%</span>
+      <div className="border-b border-hairline bg-surface px-6 py-2">
+        <div className="flex items-center justify-between text-xs text-ink-mute">
+          <span>{t('sync.syncing', { fetched: data.fetched, total: data.total || '?' })}</span>
+          <span className="tabular-nums font-medium text-ink-soft">{pct}%</span>
         </div>
-        <div className="mt-1 h-1 w-full overflow-hidden rounded bg-slate-100">
+        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-canvas-tint">
           <div
-            className="h-full bg-slate-900 transition-[width] duration-300"
+            className="h-full rounded-full bg-gradient-to-r from-primary to-primary-strong transition-[width] duration-300"
             style={{ width: `${pct}%` }}
           />
         </div>

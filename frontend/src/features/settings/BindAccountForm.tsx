@@ -3,26 +3,30 @@ import { useState } from 'react';
 import { ApiError } from '../../api/client';
 import { useBindAccount, type BindAccountInput } from '../../api/account';
 import { useTriggerSync } from '../../api/sync';
+import { useI18n } from '../../i18n/useI18n';
 
 interface Provider {
-  label: string;
+  id: string;
+  label?: string; // literal brand name
+  labelKey?: string; // localized label
   host: string;
   port: number;
 }
 
 const PROVIDERS: Provider[] = [
-  { label: 'Gmail', host: 'imap.gmail.com', port: 993 },
-  { label: 'Outlook', host: 'outlook.office365.com', port: 993 },
-  { label: 'QQ 邮箱', host: 'imap.qq.com', port: 993 },
-  { label: '163 邮箱', host: 'imap.163.com', port: 993 },
-  { label: '126 邮箱', host: 'imap.126.com', port: 993 },
-  { label: '其他', host: '', port: 993 },
+  { id: 'gmail', label: 'Gmail', host: 'imap.gmail.com', port: 993 },
+  { id: 'outlook', label: 'Outlook', host: 'outlook.office365.com', port: 993 },
+  { id: 'qq', labelKey: 'bind.qqMail', host: 'imap.qq.com', port: 993 },
+  { id: '163', labelKey: 'bind.mail163', host: 'imap.163.com', port: 993 },
+  { id: '126', labelKey: 'bind.mail126', host: 'imap.126.com', port: 993 },
+  { id: 'other', labelKey: 'bind.providerOther', host: '', port: 993 },
 ];
 
 const inputCls =
-  'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900';
+  'w-full rounded-xl border border-hairline bg-surface-muted px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20';
 
 export function BindAccountForm({ onBound }: { onBound?: () => void }) {
+  const { t } = useI18n();
   const bind = useBindAccount();
   const triggerSync = useTriggerSync();
 
@@ -56,26 +60,26 @@ export function BindAccountForm({ onBound }: { onBound?: () => void }) {
       }}
     >
       <div>
-        <div className="mb-1.5 text-sm font-medium text-slate-700">邮箱服务商</div>
+        <div className="mb-1.5 text-sm font-medium text-ink-soft">{t('bind.providerLabel')}</div>
         <div className="flex flex-wrap gap-2">
           {PROVIDERS.map((p) => (
             <button
-              key={p.label}
+              key={p.id}
               type="button"
               onClick={() => applyProvider(p)}
               className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                 form.host === p.host && p.host
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-300 text-slate-600 hover:border-slate-500'
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-hairline text-ink-soft hover:border-primary/40'
               }`}
             >
-              {p.label}
+              {p.labelKey ? t(p.labelKey) : p.label}
             </button>
           ))}
         </div>
       </div>
 
-      <Field label="邮箱地址">
+      <Field label={t('bind.emailAddress')}>
         <input
           type="email"
           required
@@ -86,7 +90,7 @@ export function BindAccountForm({ onBound }: { onBound?: () => void }) {
         />
       </Field>
 
-      <Field label="授权码 / 密码" hint="163、QQ、Gmail 等需使用授权码，而非登录密码">
+      <Field label={t('bind.password')} hint={t('bind.passwordHint')}>
         <input
           type="password"
           required
@@ -98,7 +102,7 @@ export function BindAccountForm({ onBound }: { onBound?: () => void }) {
 
       <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2">
-          <Field label="IMAP 服务器">
+          <Field label={t('bind.imapServer')}>
             <input
               required
               value={form.host}
@@ -108,7 +112,7 @@ export function BindAccountForm({ onBound }: { onBound?: () => void }) {
             />
           </Field>
         </div>
-        <Field label="端口">
+        <Field label={t('bind.port')}>
           <input
             type="number"
             required
@@ -119,17 +123,18 @@ export function BindAccountForm({ onBound }: { onBound?: () => void }) {
         </Field>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-slate-600">
+      <label className="flex items-center gap-2 text-sm text-ink-soft">
         <input
           type="checkbox"
           checked={form.use_ssl}
           onChange={(e) => set('use_ssl', e.target.checked)}
+          className="h-4 w-4 rounded border-hairline text-primary focus:ring-primary"
         />
-        使用 SSL/TLS（推荐）
+        {t('bind.useSsl')}
       </label>
 
       {err && (
-        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
           <div className="font-medium">{err.message}</div>
           {err.hint && <div className="mt-1 whitespace-pre-line text-red-500">{err.hint}</div>}
         </div>
@@ -138,9 +143,9 @@ export function BindAccountForm({ onBound }: { onBound?: () => void }) {
       <button
         type="submit"
         disabled={bind.isPending}
-        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-soft transition-all hover:bg-primary-strong disabled:opacity-50"
       >
-        {bind.isPending ? '正在验证…' : '绑定并同步'}
+        {bind.isPending ? t('bind.binding') : t('bind.bindSync')}
       </button>
     </form>
   );
@@ -157,9 +162,9 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-slate-700">{label}</span>
+      <span className="mb-1.5 block text-sm font-medium text-ink-soft">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-ink-mute">{hint}</span>}
     </label>
   );
 }

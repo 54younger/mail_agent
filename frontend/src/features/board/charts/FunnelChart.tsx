@@ -1,19 +1,21 @@
 import type { FunnelStage } from '../../../api/jobs';
-import { statusMeta } from '../../../lib/jobStatus';
+import { statusLabel, statusMeta } from '../../../lib/jobStatus';
+import { useI18n } from '../../../i18n/useI18n';
 
-// Horizontal conversion funnel: 已投递 → 笔试 → 面试 → Offer. Each bar's width is
-// proportional to the base (first stage); the label shows count + conversion %.
+// Horizontal conversion funnel: applied → test → interview → offer. Each bar's
+// width is proportional to the base (first stage); the label shows count + rate.
 interface Props {
   stages: FunnelStage[];
 }
 
 export function FunnelChart({ stages }: Props) {
+  const { t } = useI18n();
   const base = stages[0]?.count ?? 0;
 
   if (base === 0) {
     return (
-      <div className="flex h-full min-h-[180px] items-center justify-center text-sm text-slate-400">
-        暂无漏斗数据
+      <div className="flex h-full min-h-[180px] items-center justify-center text-sm text-ink-mute">
+        {t('charts.funnelEmpty')}
       </div>
     );
   }
@@ -27,15 +29,15 @@ export function FunnelChart({ stages }: Props) {
         return (
           <div key={s.status_code} className="group">
             <div className="mb-1 flex items-baseline justify-between text-xs">
-              <span className="font-medium text-slate-600">{meta.label}</span>
-              <span className="tabular-nums text-slate-400">
-                <span className="font-semibold text-slate-700">{s.count}</span>
+              <span className="font-medium text-ink-soft">{statusLabel(s.status_code, t)}</span>
+              <span className="tabular-nums text-ink-mute">
+                <span className="font-semibold text-ink">{s.count}</span>
                 {i > 0 && <span className="ml-1">· {(rate * 100).toFixed(0)}%</span>}
               </span>
             </div>
-            <div className="h-6 w-full overflow-hidden rounded-md bg-slate-100">
+            <div className="h-6 w-full overflow-hidden rounded-lg bg-canvas-tint">
               <div
-                className="h-full rounded-md transition-[width] duration-500 ease-out"
+                className="h-full rounded-lg transition-[width] duration-500 ease-out"
                 style={{
                   width: `${Math.max(pct * 100, s.count > 0 ? 4 : 0)}%`,
                   backgroundColor: meta.hex,

@@ -11,7 +11,8 @@ import {
   useTriggerExtract,
 } from '../../api/jobs';
 import { useSettings } from '../../api/settings';
-import { JOB_STATUSES, statusMeta } from '../../lib/jobStatus';
+import { JOB_STATUSES, statusLabel } from '../../lib/jobStatus';
+import { useI18n } from '../../i18n/useI18n';
 import { CompanyTable } from './CompanyTable';
 import { ExtractProgress } from './ExtractProgress';
 import { JobDrawer } from './JobDrawer';
@@ -19,8 +20,12 @@ import { StatsDashboard } from './StatsDashboard';
 
 type RangePreset = 'default' | '30' | '90' | 'all' | 'custom';
 
+const selectCls =
+  'rounded-xl border border-hairline bg-surface px-2.5 py-1.5 text-sm text-ink-soft shadow-soft outline-none transition-colors focus:border-primary disabled:opacity-50';
+
 export function BoardPage() {
   const qc = useQueryClient();
+  const { t } = useI18n();
   const summary = useJobSummary();
   const stats = useJobStats();
   const settings = useSettings();
@@ -49,11 +54,11 @@ export function BoardPage() {
       setNotice(
         status.error
           ? status.error
-          : `已处理 ${status.total} 封邮件，新增 ${status.created} 条投递记录`,
+          : t('board.extractDone', { total: status.total, created: status.created }),
       );
     }
     wasRunning.current = status.running;
-  }, [status, qc]);
+  }, [status, qc, t]);
 
   const computeRange = (): ExtractRange => {
     if (preset === 'all') return {};
@@ -78,24 +83,26 @@ export function BoardPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-start justify-between border-b border-slate-200 bg-white px-6 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-hairline bg-surface px-6 py-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-slate-900">求职看板</h1>
-          <p className="mt-0.5 text-sm text-slate-400">按公司 + 职位聚合的投递总表与统计</p>
+          <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+            {t('board.title')}
+          </h1>
+          <p className="mt-1 text-sm text-ink-mute">{t('board.subtitle')}</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <select
             value={preset}
             onChange={(e) => setPreset(e.target.value as RangePreset)}
             disabled={running}
-            title="抽取的邮件时间范围"
-            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-slate-900 disabled:opacity-50"
+            title={t('board.rangeTitle')}
+            className={selectCls}
           >
-            <option value="default">默认（{defaultDays} 天）</option>
-            <option value="90">近 90 天</option>
-            <option value="30">近 30 天</option>
-            <option value="all">全部</option>
-            <option value="custom">自定义</option>
+            <option value="default">{t('board.rangeDefault', { days: defaultDays })}</option>
+            <option value="90">{t('board.rangeLast90')}</option>
+            <option value="30">{t('board.rangeLast30')}</option>
+            <option value="all">{t('board.rangeAll')}</option>
+            <option value="custom">{t('board.rangeCustom')}</option>
           </select>
           {preset === 'custom' && (
             <div className="flex items-center gap-1.5">
@@ -104,30 +111,30 @@ export function BoardPage() {
                 value={customStart}
                 onChange={(e) => setCustomStart(e.target.value)}
                 disabled={running}
-                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-slate-900 disabled:opacity-50"
+                className={selectCls}
               />
-              <span className="text-xs text-slate-400">至</span>
+              <span className="text-xs text-ink-mute">{t('common.to')}</span>
               <input
                 type="date"
                 value={customEnd}
                 onChange={(e) => setCustomEnd(e.target.value)}
                 disabled={running}
-                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-slate-900 disabled:opacity-50"
+                className={selectCls}
               />
             </div>
           )}
           <button
             onClick={runExtract}
             disabled={running || triggerExtract.isPending}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-xl bg-primary px-3.5 py-1.5 text-sm font-semibold text-white shadow-soft transition-all hover:bg-primary-strong hover:shadow-card disabled:opacity-50"
           >
-            {running ? '抽取中…' : '从邮件抽取'}
+            {running ? t('board.extracting') : t('board.extract')}
           </button>
           <button
             onClick={() => setAdding(true)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:border-slate-500"
+            className="rounded-xl border border-hairline bg-surface px-3.5 py-1.5 text-sm font-medium text-ink-soft shadow-soft transition-colors hover:border-primary/40 hover:text-ink"
           >
-            手动添加
+            {t('board.manualAdd')}
           </button>
         </div>
       </div>
@@ -135,17 +142,15 @@ export function BoardPage() {
       {running && status && <ExtractProgress status={status} />}
 
       {notice && !running && (
-        <div className="border-b border-slate-100 bg-slate-50 px-6 py-2 text-xs text-slate-600">
+        <div className="border-b border-hairline bg-primary-tint/40 px-6 py-2 text-xs text-ink-soft">
           {notice}
         </div>
       )}
 
       {summary.isLoading ? (
-        <Center>加载中…</Center>
+        <Center>{t('common.loading')}</Center>
       ) : rows.length === 0 ? (
-        <Center>
-          还没有投递记录。点击「从邮件抽取」让 Claude 从邮件中识别求职投递，或「手动添加」。
-        </Center>
+        <EmptyBoard message={t('board.empty')} />
       ) : (
         <div className="flex-1 space-y-5 overflow-auto p-6">
           {stats.data && <StatsDashboard stats={stats.data} />}
@@ -160,21 +165,25 @@ export function BoardPage() {
 }
 
 function ManualAddModal({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   const create = useCreateJob();
   const [company, setCompany] = useState('');
   const [position, setPosition] = useState('');
   const [statusCode, setStatusCode] = useState(0);
 
+  const inputCls =
+    'w-full rounded-xl border border-hairline bg-surface-muted px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20';
+
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/20"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-ink/25 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+        className="w-full max-w-sm rounded-3xl bg-surface p-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-base font-semibold text-slate-900">手动添加投递</h2>
+        <h2 className="font-display text-lg font-semibold text-ink">{t('board.manualAddTitle')}</h2>
         <form
           className="mt-4 space-y-3"
           onSubmit={(e) => {
@@ -191,23 +200,23 @@ function ManualAddModal({ onClose }: { onClose: () => void }) {
             autoFocus
             value={company}
             onChange={(e) => setCompany(e.target.value)}
-            placeholder="公司名称"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+            placeholder={t('board.companyPlaceholder')}
+            className={inputCls}
           />
           <input
             value={position}
             onChange={(e) => setPosition(e.target.value)}
-            placeholder="职位（可选）"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+            placeholder={t('board.positionPlaceholder')}
+            className={inputCls}
           />
           <select
             value={statusCode}
             onChange={(e) => setStatusCode(Number(e.target.value))}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+            className={inputCls}
           >
             {JOB_STATUSES.map((s) => (
               <option key={s.code} value={s.code}>
-                {statusMeta(s.code).label}
+                {statusLabel(s.code, t)}
               </option>
             ))}
           </select>
@@ -215,16 +224,16 @@ function ManualAddModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
+              className="rounded-xl px-3 py-1.5 text-sm text-ink-mute transition-colors hover:bg-canvas-tint hover:text-ink-soft"
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={!company.trim() || create.isPending}
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+              className="rounded-xl bg-primary px-3.5 py-1.5 text-sm font-semibold text-white shadow-soft transition-all hover:bg-primary-strong disabled:opacity-50"
             >
-              添加
+              {t('common.add')}
             </button>
           </div>
         </form>
@@ -233,9 +242,23 @@ function ManualAddModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function EmptyBoard({ message }: { message: string }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-primary-tint text-primary-strong">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="16" rx="2.5" />
+          <path d="M3 9h18M8 4v5M16 4v5" />
+        </svg>
+      </div>
+      <p className="max-w-md text-sm leading-relaxed text-ink-mute">{message}</p>
+    </div>
+  );
+}
+
 function Center({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-slate-400">
+    <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-ink-mute">
       <p className="max-w-md">{children}</p>
     </div>
   );

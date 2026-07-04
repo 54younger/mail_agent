@@ -6,17 +6,23 @@ import { SetupGate } from '../features/setup/SetupGate';
 import { BoardPage } from '../features/board/BoardPage';
 import { InboxPage } from '../features/inbox/InboxPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
+import { useI18n } from '../i18n/useI18n';
 
 export function App() {
   const health = useHealth();
+  const { t } = useI18n();
 
   if (health.isLoading) {
-    return <FullScreenMessage>正在连接本地服务…</FullScreenMessage>;
+    return <FullScreenMessage>{t('app.connecting')}</FullScreenMessage>;
   }
   if (health.isError) {
     return (
       <FullScreenMessage>
-        无法连接本地后端服务。请确认后端已启动（<code>python run.py</code>）。
+        {t('app.connectErrorPre')}
+        <code className="rounded bg-canvas-tint px-1.5 py-0.5 font-mono text-[0.85em] text-ink-soft">
+          python run.py
+        </code>
+        {t('app.connectErrorPost')}
       </FullScreenMessage>
     );
   }
@@ -40,7 +46,7 @@ export function App() {
 
 function FullScreenMessage({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center p-8 text-center text-slate-600">
+    <div className="flex h-full items-center justify-center p-8 text-center text-ink-soft">
       <p className="max-w-md text-sm leading-relaxed">{children}</p>
     </div>
   );

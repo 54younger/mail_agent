@@ -6,19 +6,11 @@ import {
   useSetJobsConfig,
   useSettings,
 } from '../../api/settings';
+import { useI18n } from '../../i18n/useI18n';
 
 // User-tunable job pipeline: keyword prefilter, exclusion rules (Google Meet,
 // senders), company normalization (suffixes + aliases), status-mapping rules,
 // and the default extraction range. One local draft; one save.
-
-const STATUS_LABELS: Record<string, string> = {
-  applied: '已投递',
-  online_test: '测评',
-  interview: '面试',
-  offer: 'Offer',
-  rejected: '已拒',
-  unknown: '未知',
-};
 
 const linesToList = (s: string): string[] =>
   s.split('\n').map((x) => x.trim()).filter(Boolean);
@@ -33,10 +25,14 @@ interface RuleRow {
   status: string;
 }
 
+const fieldInput =
+  'flex-1 rounded-xl border border-hairline bg-surface-muted px-3 py-1.5 text-sm text-ink outline-none transition-colors focus:border-primary';
+
 export function JobConfigSettings() {
+  const { t } = useI18n();
   const settings = useSettings();
   const save = useSetJobsConfig();
-  if (!settings.data) return <p className="text-sm text-slate-400">加载中…</p>;
+  if (!settings.data) return <p className="text-sm text-ink-mute">{t('common.loading')}</p>;
   return (
     <JobConfigForm
       jobs={settings.data.jobs}
@@ -58,6 +54,7 @@ function JobConfigForm({
   onSave: (patch: Partial<JobsConfig>) => void;
   saving: boolean;
 }) {
+  const { t } = useI18n();
   const [keywords, setKeywords] = useState(listToLines(jobs.keywords));
   const [meetingLinks, setMeetingLinks] = useState(listToLines(jobs.exclude.meeting_links));
   const [senders, setSenders] = useState(listToLines(jobs.exclude.senders));
@@ -94,81 +91,70 @@ function JobConfigForm({
 
   return (
     <div className="space-y-5">
-      <p className="text-xs text-slate-400">
-        这些规则决定哪些邮件被识别为求职、如何归并公司、以及状态判定。修改后点底部「保存」即刻生效。
-      </p>
+      <p className="text-xs text-ink-mute">{t('jobConfig.intro')}</p>
 
-      <Field
-        label="求职关键词（预筛，每行一个）"
-        hint="邮件主题/正文命中任一关键词才会进入 AI 判定，否则跳过以省 token。"
-      >
+      <Field label={t('jobConfig.keywordsLabel')} hint={t('jobConfig.keywordsHint')}>
         <TextArea value={keywords} onChange={setKeywords} rows={5} />
       </Field>
 
-      <Field
-        label="排除的会议链接 / 关键词（每行一个）"
-        hint="含 Google Meet 等会议链接的邮件视为日程，不新增投递记录（仍保留在收件箱）。"
-      >
+      <Field label={t('jobConfig.meetingLabel')} hint={t('jobConfig.meetingHint')}>
         <TextArea value={meetingLinks} onChange={setMeetingLinks} rows={3} />
       </Field>
 
-      <Field label="排除的发件人（子串匹配，每行一个）" hint="命中的发件人邮件不建投递记录。">
+      <Field label={t('jobConfig.sendersLabel')} hint={t('jobConfig.sendersHint')}>
         <TextArea value={senders} onChange={setSenders} rows={2} />
       </Field>
 
-      <Field
-        label="公司后缀（归并用，每行一个）"
-        hint="归并公司时剥离这些尾缀"
-      >
+      <Field label={t('jobConfig.suffixesLabel')} hint={t('jobConfig.suffixesHint')}>
         <TextArea value={suffixes} onChange={setSuffixes} rows={3} />
       </Field>
 
-      <Field label="公司别名（把不同写法归并为同一家）" hint="左侧任意写法 → 右侧规范名。">
+      <Field label={t('jobConfig.aliasesLabel')} hint={t('jobConfig.aliasesHint')}>
         <div className="space-y-2">
           {aliases.map((row, i) => (
             <div key={i} className="flex items-center gap-2">
               <input
                 value={row.from}
                 onChange={(e) => setAliases(update(aliases, i, { from: e.target.value }))}
-                placeholder="如 Sanalabs"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-slate-900"
+                placeholder={t('jobConfig.aliasFromPlaceholder')}
+                className={fieldInput}
               />
-              <span className="text-slate-400">→</span>
+              <span className="text-ink-mute">→</span>
               <input
                 value={row.to}
                 onChange={(e) => setAliases(update(aliases, i, { to: e.target.value }))}
-                placeholder="如 Sana"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-slate-900"
+                placeholder={t('jobConfig.aliasToPlaceholder')}
+                className={fieldInput}
               />
               <RemoveButton onClick={() => setAliases(aliases.filter((_, j) => j !== i))} />
             </div>
           ))}
-          <AddButton label="添加别名" onClick={() => setAliases([...aliases, { from: '', to: '' }])} />
+          <AddButton
+            label={t('jobConfig.addAlias')}
+            onClick={() => setAliases([...aliases, { from: '', to: '' }])}
+          />
         </div>
       </Field>
 
-      <Field
-        label="状态映射规则（关键词命中即判为该状态）"
-        hint="例如把「AI面试 / 自动化面试」判为测评。多个关键词用逗号分隔。"
-      >
+      <Field label={t('jobConfig.rulesLabel')} hint={t('jobConfig.rulesHint')}>
         <div className="space-y-2">
           {rules.map((row, i) => (
             <div key={i} className="flex items-center gap-2">
               <input
                 value={row.keywords}
                 onChange={(e) => setRules(update(rules, i, { keywords: e.target.value }))}
-                placeholder="ai面试, 自动化面试"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-slate-900"
+                placeholder={t('jobConfig.rulesPlaceholder')}
+                className={fieldInput}
               />
-              <span className="text-slate-400">→</span>
+              <span className="text-ink-mute">→</span>
               <select
                 value={row.status}
                 onChange={(e) => setRules(update(rules, i, { status: e.target.value }))}
-                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-slate-900"
+                className="rounded-xl border border-hairline bg-surface-muted px-2 py-1.5 text-sm text-ink outline-none transition-colors focus:border-primary"
               >
                 {statusOptions.map((o) => (
                   <option key={o.name} value={o.name}>
-                    {STATUS_LABELS[o.name] ?? o.name}
+                    {t(`jobStatusOption.${o.name}`)}
                   </option>
                 ))}
               </select>
@@ -176,29 +162,29 @@ function JobConfigForm({
             </div>
           ))}
           <AddButton
-            label="添加规则"
+            label={t('jobConfig.addRule')}
             onClick={() => setRules([...rules, { keywords: '', status: defaultStatus }])}
           />
         </div>
       </Field>
 
-      <Field label="默认抽取时间范围（天）" hint="看板「从邮件抽取」的默认回溯天数。">
+      <Field label={t('jobConfig.rangeDaysLabel')} hint={t('jobConfig.rangeDaysHint')}>
         <input
           type="number"
           min={1}
           max={3650}
           value={rangeDays}
           onChange={(e) => setRangeDays(e.target.value)}
-          className="w-28 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-slate-900"
+          className="w-28 rounded-xl border border-hairline bg-surface-muted px-3 py-1.5 text-sm text-ink outline-none transition-colors focus:border-primary"
         />
       </Field>
 
       <button
         onClick={handleSave}
         disabled={saving}
-        className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+        className="rounded-xl bg-primary px-3.5 py-1.5 text-sm font-semibold text-white shadow-soft transition-all hover:bg-primary-strong disabled:opacity-50"
       >
-        {saving ? '保存中…' : '保存求职配置'}
+        {saving ? t('common.saving') : t('jobConfig.saveJobConfig')}
       </button>
     </div>
   );
@@ -219,8 +205,8 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-600">{label}</span>
-      {hint && <span className="mb-1.5 block text-[11px] text-slate-400">{hint}</span>}
+      <span className="mb-1 block text-xs font-medium text-ink-soft">{label}</span>
+      {hint && <span className="mb-1.5 block text-[11px] text-ink-mute">{hint}</span>}
       {children}
     </label>
   );
@@ -240,7 +226,7 @@ function TextArea({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       rows={rows}
-      className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-slate-900"
+      className="w-full rounded-xl border border-hairline bg-surface-muted px-3 py-2 font-mono text-xs leading-5 text-ink outline-none transition-colors focus:border-primary"
     />
   );
 }
@@ -250,7 +236,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       onClick={onClick}
       type="button"
-      className="rounded-lg border border-dashed border-slate-300 px-3 py-1 text-xs text-slate-500 hover:border-slate-500"
+      className="rounded-xl border border-dashed border-hairline px-3 py-1 text-xs text-ink-mute transition-colors hover:border-primary/50 hover:text-ink-soft"
     >
       + {label}
     </button>
@@ -262,7 +248,7 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
     <button
       onClick={onClick}
       type="button"
-      className="shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-400 hover:border-red-300 hover:text-red-500"
+      className="shrink-0 rounded-xl border border-hairline px-2 py-1 text-xs text-ink-mute transition-colors hover:border-red-300 hover:text-red-500"
     >
       ✕
     </button>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { TrendPoint } from '../../../api/jobs';
+import { useI18n } from '../../../i18n/useI18n';
 import { niceMax, smoothPath } from './scale';
 
 // Applications-over-time area chart. Hand-rolled SVG: gradient fill, gridlines,
@@ -14,12 +15,13 @@ interface Props {
 }
 
 export function TrendChart({ data }: Props) {
+  const { t } = useI18n();
   const [hover, setHover] = useState<number | null>(null);
 
   if (data.length === 0) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-slate-400">
-        暂无投递数据
+      <div className="flex h-[220px] items-center justify-center text-sm text-ink-mute">
+        {t('charts.trendEmpty')}
       </div>
     );
   }
@@ -42,13 +44,13 @@ export function TrendChart({ data }: Props) {
       viewBox={`0 0 ${W} ${H}`}
       className="w-full"
       role="img"
-      aria-label="投递数量随日期分布"
+      aria-label={t('charts.trendAria')}
       onMouseLeave={() => setHover(null)}
     >
       <defs>
         <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.28" />
-          <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
+          <stop offset="0%" stopColor="#6d5efc" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="#6d5efc" stopOpacity="0" />
         </linearGradient>
       </defs>
 
@@ -58,8 +60,8 @@ export function TrendChart({ data }: Props) {
         const gy = yAt(v);
         return (
           <g key={i}>
-            <line x1={PAD.left} y1={gy} x2={W - PAD.right} y2={gy} stroke="#eef2f7" strokeWidth={1} />
-            <text x={PAD.left - 6} y={gy + 3} textAnchor="end" className="fill-slate-400 text-[9px]">
+            <line x1={PAD.left} y1={gy} x2={W - PAD.right} y2={gy} stroke="#e8e6ef" strokeWidth={1} />
+            <text x={PAD.left - 6} y={gy + 3} textAnchor="end" fill="#86848f" className="text-[9px]">
               {Math.round(v)}
             </text>
           </g>
@@ -67,7 +69,7 @@ export function TrendChart({ data }: Props) {
       })}
 
       <path d={area} fill="url(#trendFill)" />
-      <path d={line} fill="none" stroke="#8b5cf6" strokeWidth={2.5} strokeLinecap="round" />
+      <path d={line} fill="none" stroke="#6d5efc" strokeWidth={2.5} strokeLinecap="round" />
 
       {/* hover crosshair + point */}
       {active && hover != null && (
@@ -77,11 +79,11 @@ export function TrendChart({ data }: Props) {
             y1={PAD.top}
             x2={xAt(hover)}
             y2={baseY}
-            stroke="#c4b5fd"
+            stroke="#b7aaff"
             strokeWidth={1}
             strokeDasharray="3 3"
           />
-          <circle cx={xAt(hover)} cy={yAt(active.count)} r={4} fill="#8b5cf6" stroke="#fff" strokeWidth={2} />
+          <circle cx={xAt(hover)} cy={yAt(active.count)} r={4} fill="#6d5efc" stroke="#fff" strokeWidth={2} />
         </g>
       )}
 
@@ -89,7 +91,7 @@ export function TrendChart({ data }: Props) {
       {[0, Math.floor((data.length - 1) / 2), data.length - 1]
         .filter((v, i, a) => a.indexOf(v) === i)
         .map((i) => (
-          <text key={i} x={xAt(i)} y={H - 8} textAnchor="middle" className="fill-slate-400 text-[9px]">
+          <text key={i} x={xAt(i)} y={H - 8} textAnchor="middle" fill="#86848f" className="text-[9px]">
             {data[i].date.slice(5)}
           </text>
         ))}
@@ -109,7 +111,7 @@ export function TrendChart({ data }: Props) {
 
       {active && hover != null && (
         <g transform={`translate(${xAt(hover)}, ${yAt(active.count) - 12})`}>
-          <rect x={-24} y={-18} width={48} height={16} rx={4} fill="#0f172a" />
+          <rect x={-24} y={-18} width={48} height={16} rx={4} fill="#16151f" />
           <text x={0} y={-6} textAnchor="middle" className="fill-white text-[9px]">
             {active.date.slice(5)} · {active.count}
           </text>

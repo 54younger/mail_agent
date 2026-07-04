@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
+import { useI18n } from '../../i18n/useI18n';
 
 interface SetupResponse {
   data_dir: string;
 }
 
 // First-run screen: the user names a local folder where their SQLite DB and
-// settings live. Backend endpoint (POST /api/setup/data-folder) lands in Phase 1;
-// on success we invalidate `health` so the app re-renders into the shell.
+// settings live. On success we invalidate `health` so the app re-renders into
+// the shell.
 export function SetupGate() {
   const qc = useQueryClient();
+  const { t } = useI18n();
   const [path, setPath] = useState('');
 
   const mutation = useMutation({
@@ -20,13 +22,17 @@ export function SetupGate() {
   });
 
   return (
-    <div className="flex h-full items-center justify-center bg-slate-50 p-6">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-100">
-        <h1 className="text-xl font-semibold text-slate-900">欢迎使用 Mail Agent</h1>
-        <p className="mt-2 text-sm leading-relaxed text-slate-500">
-          请选择一个本地文件夹用于存放你的数据库与设置。你的邮件数据只保存在这台电脑上，
-          账户密码与 API Key 存入系统安全存储（不会明文落盘）。
-        </p>
+    <div className="relative flex h-full items-center justify-center overflow-hidden p-6">
+      <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-primary/10 blur-3xl" />
+      <div className="relative w-full max-w-lg rounded-3xl bg-surface p-8 shadow-lift ring-1 ring-hairline">
+        <div className="mb-5 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-primary to-primary-strong text-lg font-bold text-white shadow-lift">
+          M
+        </div>
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+          {t('setup.title')}
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{t('setup.intro')}</p>
 
         <form
           className="mt-6 space-y-3"
@@ -35,21 +41,25 @@ export function SetupGate() {
             if (path.trim()) mutation.mutate(path.trim());
           }}
         >
-          <label className="block text-sm font-medium text-slate-700" htmlFor="data-folder">
-            数据文件夹路径
+          <label className="block text-sm font-medium text-ink-soft" htmlFor="data-folder">
+            {t('setup.folderLabel')}
           </label>
           <input
             id="data-folder"
             value={path}
             onChange={(e) => setPath(e.target.value)}
             placeholder="/mnt/c/Users/You/MailData"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+            className="w-full rounded-xl border border-hairline bg-surface-muted px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
           />
-          <p className="text-xs text-slate-400">
-            请填写<strong>绝对路径</strong>（不要用相对路径，否则会落在程序目录内）。示例：
-            <br />· macOS/Linux：<code>/home/you/mail-data</code> 或 <code>~/mail-data</code>
-            <br />· Windows：<code>D:\MailData</code>
-            <br />· 在 WSL 中指向 Windows 盘：<code>C:\Users\You\MailData</code> 或{' '}
+          <p className="text-xs leading-relaxed text-ink-mute">
+            {t('setup.hintAbsolute')}
+            <br />· {t('setup.hintMac')}
+            <code>/home/you/mail-data</code> {t('setup.hintWslOr')} <code>~/mail-data</code>
+            <br />· {t('setup.hintWin')}
+            <code>D:\MailData</code>
+            <br />· {t('setup.hintWsl')}
+            <code>C:\Users\You\MailData</code>
+            {t('setup.hintWslOr')}
             <code>/mnt/c/Users/You/MailData</code>
           </p>
 
@@ -60,9 +70,9 @@ export function SetupGate() {
           <button
             type="submit"
             disabled={!path.trim() || mutation.isPending}
-            className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-50"
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition-all hover:bg-primary-strong hover:shadow-card disabled:opacity-50"
           >
-            {mutation.isPending ? '创建中…' : '开始使用'}
+            {mutation.isPending ? t('setup.creating') : t('setup.start')}
           </button>
         </form>
       </div>

@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { type ApplicationSummary, useDeleteJob } from '../../api/jobs';
-import { statusMeta } from '../../lib/jobStatus';
+import { statusLabel, statusMeta } from '../../lib/jobStatus';
 import { formatFull } from '../../lib/format';
+import { useI18n } from '../../i18n/useI18n';
 import { EmailDetail } from '../inbox/EmailDetail';
 
 // Slide-over for one deduped application (company + position): the merged status
 // timeline across all its emails, the list of source emails, and delete-all.
 export function JobDrawer({ row, onClose }: { row: ApplicationSummary; onClose: () => void }) {
+  const { t } = useI18n();
   const del = useDeleteJob();
   const meta = statusMeta(row.status_code);
 
@@ -27,36 +29,50 @@ export function JobDrawer({ row, onClose }: { row: ApplicationSummary; onClose: 
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/20" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-40 flex justify-end bg-ink/25 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
-        className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"
+        className="flex h-full w-full max-w-xl flex-col bg-surface shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+        <div className="flex items-start justify-between border-b border-hairline px-6 py-4">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-slate-900">{row.company || '（未知公司）'}</h2>
-              <span className={`rounded-full px-2 py-0.5 text-xs ${meta.chip}`}>{meta.label}</span>
+              <h2 className="font-display text-lg font-semibold text-ink">
+                {row.company || t('common.unknownCompany')}
+              </h2>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${meta.chip}`}>
+                {statusLabel(row.status_code, t)}
+              </span>
             </div>
-            <div className="mt-0.5 text-xs text-slate-400">
-              {row.position || '未标注职位'} · 首次投递 {formatFull(row.applied_at)}
+            <div className="mt-0.5 text-xs text-ink-mute">
+              {row.position || t('common.noPosition')} ·{' '}
+              {t('drawer.firstApplied', { date: formatFull(row.applied_at) })}
             </div>
           </div>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100">
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-ink-mute transition-colors hover:bg-canvas-tint hover:text-ink-soft"
+            aria-label={t('common.cancel')}
+          >
             ✕
           </button>
         </div>
 
-        <div className="border-b border-slate-100 px-6 py-4">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">状态时间线</h3>
+        <div className="border-b border-hairline px-6 py-4">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-mute">
+            {t('drawer.statusTimeline')}
+          </h3>
           <ol className="space-y-2">
-            {timeline.map((t, i) => {
-              const m = statusMeta(t.status);
+            {timeline.map((entry, i) => {
+              const m = statusMeta(entry.status);
               return (
                 <li key={i} className="flex items-center gap-2 text-sm">
                   <span className={`h-2 w-2 rounded-full ${m.dot}`} />
-                  <span className="text-slate-700">{m.label}</span>
-                  <span className="text-xs text-slate-400">{formatFull(t.ts)}</span>
+                  <span className="text-ink-soft">{statusLabel(entry.status, t)}</span>
+                  <span className="text-xs text-ink-mute">{formatFull(entry.ts)}</span>
                 </li>
               );
             })}
@@ -64,22 +80,22 @@ export function JobDrawer({ row, onClose }: { row: ApplicationSummary; onClose: 
         </div>
 
         {emails.length > 0 && (
-          <div className="border-b border-slate-100 px-6 py-3">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-              来源邮件（{emails.length}）
+          <div className="border-b border-hairline px-6 py-3">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-mute">
+              {t('drawer.sourceEmails', { n: emails.length })}
             </h3>
             <ul className="space-y-1">
               {emails.map((r) => (
                 <li key={r.id}>
                   <button
                     onClick={() => setOpenId(r.email_id)}
-                    className={`w-full truncate rounded px-2 py-1 text-left text-xs transition-colors ${
+                    className={`w-full truncate rounded-lg px-2 py-1 text-left text-xs transition-colors ${
                       openId === r.email_id
-                        ? 'bg-violet-50 text-violet-700'
-                        : 'text-slate-500 hover:bg-slate-50'
+                        ? 'bg-primary-tint text-primary-strong'
+                        : 'text-ink-mute hover:bg-canvas-tint'
                     }`}
                   >
-                    {r.source_subject || '（无主题）'}
+                    {r.source_subject || t('common.noSubject')}
                   </button>
                 </li>
               ))}
@@ -91,19 +107,19 @@ export function JobDrawer({ row, onClose }: { row: ApplicationSummary; onClose: 
           {openId != null ? (
             <EmailDetail id={openId} />
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-slate-400">
-              手动添加，无关联邮件
+            <div className="flex h-full items-center justify-center text-sm text-ink-mute">
+              {t('drawer.manualNoEmail')}
             </div>
           )}
         </div>
 
-        <div className="border-t border-slate-200 px-6 py-3">
+        <div className="border-t border-hairline px-6 py-3">
           <button
             onClick={deleteAll}
             disabled={del.isPending}
-            className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+            className="rounded-xl border border-red-200 px-3 py-1.5 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
           >
-            删除该公司职位全部记录
+            {t('drawer.deleteAll')}
           </button>
         </div>
       </div>

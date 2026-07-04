@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { useAccounts } from '../../api/account';
 import { useEmails, type EmailListItem } from '../../api/emails';
 import { formatListDate } from '../../lib/format';
+import { useI18n } from '../../i18n/useI18n';
 import { EmailDetail } from './EmailDetail';
 
 // Small stable palette so each account gets a consistent badge color.
@@ -16,9 +17,10 @@ const BADGE_COLORS = [
   'bg-violet-100 text-violet-700',
 ];
 
-// 收件箱 — merged, newest-first across all accounts (or filtered to one).
+// Inbox — merged, newest-first across all accounts (or filtered to one).
 // List paginates 100/page; the reading pane lazily loads the body on open.
 export function InboxPage() {
+  const { t } = useI18n();
   const accounts = useAccounts();
   const [page, setPage] = useState(0);
   const [accountFilter, setAccountFilter] = useState<number | null>(null);
@@ -43,11 +45,11 @@ export function InboxPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="收件箱" subtitle="所有账户合并，按最新排序，每页 100 封" />
+      <PageHeader title={t('inbox.title')} subtitle={t('inbox.subtitle')} />
       <div className="flex min-h-0 flex-1">
-        <div className="flex w-[380px] shrink-0 flex-col border-r border-slate-200 bg-white">
+        <div className="flex w-[380px] shrink-0 flex-col border-r border-hairline bg-surface">
           {multi && (
-            <div className="border-b border-slate-100 p-2">
+            <div className="border-b border-hairline p-2">
               <select
                 value={accountFilter ?? ''}
                 onChange={(e) => {
@@ -55,9 +57,9 @@ export function InboxPage() {
                   setPage(0);
                   setAccountFilter(e.target.value ? Number(e.target.value) : null);
                 }}
-                className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-slate-900"
+                className="w-full rounded-xl border border-hairline bg-surface-muted px-2 py-1.5 text-sm text-ink outline-none transition-colors focus:border-primary"
               >
-                <option value="">全部账户</option>
+                <option value="">{t('inbox.allAccounts')}</option>
                 {accountList.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.username}
@@ -68,11 +70,11 @@ export function InboxPage() {
           )}
 
           {isLoading ? (
-            <Note>加载中…</Note>
+            <Note>{t('common.loading')}</Note>
           ) : isError ? (
-            <Note>加载失败</Note>
+            <Note>{t('inbox.loadFailed')}</Note>
           ) : !data || data.total === 0 ? (
-            <Note>暂无邮件，同步完成后将自动显示</Note>
+            <Note>{t('inbox.empty')}</Note>
           ) : (
             <>
               <ul className="flex-1 overflow-auto">
@@ -103,8 +105,8 @@ export function InboxPage() {
 
         <div className="min-w-0 flex-1">
           {selected == null ? (
-            <div className="flex h-full items-center justify-center text-sm text-slate-400">
-              选择一封邮件以查看内容
+            <div className="flex h-full items-center justify-center text-sm text-ink-mute">
+              {t('inbox.selectPrompt')}
             </div>
           ) : (
             <EmailDetail id={selected} />
@@ -130,21 +132,20 @@ function EmailRow({
   badgeColor: string;
   onClick: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <li>
       <button
         onClick={onClick}
-        className={`flex w-full flex-col gap-0.5 border-b border-slate-100 px-4 py-3 text-left transition-colors ${
-          selected ? 'bg-slate-100' : 'hover:bg-slate-50'
+        className={`flex w-full flex-col gap-0.5 border-b border-hairline/70 px-4 py-3 text-left transition-colors ${
+          selected ? 'bg-primary-tint/50' : 'hover:bg-canvas-tint'
         }`}
       >
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-sm font-medium text-slate-800">
-            {email.subject || '（无主题）'}
+          <span className="truncate text-sm font-medium text-ink">
+            {email.subject || t('common.noSubject')}
           </span>
-          <span className="shrink-0 text-[11px] text-slate-400">
-            {formatListDate(email.date)}
-          </span>
+          <span className="shrink-0 text-[11px] text-ink-mute">{formatListDate(email.date)}</span>
         </div>
         <div className="flex items-center gap-1.5">
           {showBadge && badgeLabel && (
@@ -152,8 +153,8 @@ function EmailRow({
               {badgeLabel}
             </span>
           )}
-          <span className="truncate text-xs text-slate-500">
-            {email.from_address || '未知发件人'}
+          <span className="truncate text-xs text-ink-soft">
+            {email.from_address || t('common.unknownSender')}
           </span>
         </div>
       </button>
@@ -174,29 +175,28 @@ function Pager({
   onPrev: () => void;
   onNext: () => void;
 }) {
+  const { t } = useI18n();
   return (
-    <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+    <div className="flex items-center justify-between border-t border-hairline bg-surface-muted px-3 py-2 text-xs text-ink-mute">
       <button
         onClick={onPrev}
         disabled={page === 0}
-        className="rounded px-2 py-1 hover:bg-slate-200 disabled:opacity-40"
+        className="rounded-lg px-2 py-1 transition-colors hover:bg-canvas-tint disabled:opacity-40"
       >
-        上一页
+        {t('inbox.prev')}
       </button>
-      <span>
-        第 {page + 1} / {pageCount} 页 · 共 {total} 封
-      </span>
+      <span>{t('inbox.pager', { page: page + 1, count: pageCount, total })}</span>
       <button
         onClick={onNext}
         disabled={page >= pageCount - 1}
-        className="rounded px-2 py-1 hover:bg-slate-200 disabled:opacity-40"
+        className="rounded-lg px-2 py-1 transition-colors hover:bg-canvas-tint disabled:opacity-40"
       >
-        下一页
+        {t('inbox.next')}
       </button>
     </div>
   );
 }
 
 function Note({ children }: { children: ReactNode }) {
-  return <div className="p-6 text-sm text-slate-400">{children}</div>;
+  return <div className="p-6 text-sm text-ink-mute">{children}</div>;
 }
