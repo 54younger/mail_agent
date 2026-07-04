@@ -62,6 +62,12 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Chrome Private Network Access: a public HTTPS page (e.g. the Vercel-
+        # hosted frontend) calling this backend on 127.0.0.1 must have its PNA
+        # preflight answered with Access-Control-Allow-Private-Network: true, or
+        # Chrome blocks the request. Safe here because the backend is bound to
+        # localhost and CORS already restricts the origin.
+        allow_private_network=True,
     )
 
     app.include_router(health.router)

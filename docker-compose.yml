@@ -7,6 +7,10 @@ services:
     container_name: mailagent
     ports:
       - '127.0.0.1:8765:8765'
+    environment:
+      # Origin(s) allowed to call this local backend. Point it at your Vercel URL
+      # when the frontend is hosted there (or export MAIL_AGENT_CORS_ORIGINS).
+      MAIL_AGENT_CORS_ORIGINS: ${MAIL_AGENT_CORS_ORIGINS:-https://mail-agent.vercel.app}
     volumes:
       - mailagent-data:/data
     restart: unless-stopped

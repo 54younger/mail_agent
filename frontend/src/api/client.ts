@@ -1,6 +1,11 @@
-// Thin typed fetch wrapper for the local backend. Same-origin in prod; proxied
-// to 127.0.0.1:8765 in dev (see vite.config.ts). Surfaces the backend's
-// structured error body ({message, hint, kind}) as an ApiError.
+// Thin typed fetch wrapper for the local backend. Same-origin by default
+// (local single-origin build + the dev Vite proxy). When the frontend is hosted
+// on a different origin (e.g. Vercel) and must reach each user's own local
+// backend, set VITE_API_BASE_URL at build time (e.g. http://127.0.0.1:8765).
+// Surfaces the backend's structured error body ({message, hint, kind}) as ApiError.
+
+// Trailing slash trimmed so `${API_BASE}${path}` never doubles up on `/`.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
 export interface ApiErrorBody {
   message?: string;
@@ -23,7 +28,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     ...init,
   });

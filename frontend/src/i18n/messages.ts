@@ -24,8 +24,10 @@ const en = {
   },
   app: {
     connecting: 'Connecting to the local service…',
-    connectErrorPre: 'Unable to reach the local backend service. Make sure the backend is running (',
-    connectErrorPost: ').',
+    backendDownTitle: 'Start your local backend',
+    backendDownBody:
+      'This app runs a small backend on your own computer that stores all your data locally. Start it with Docker, then this page loads automatically:',
+    backendDownRetry: 'Waiting for the backend… this page refreshes on its own.',
   },
   nav: {
     board: 'Job Board',
@@ -277,8 +279,10 @@ const zh: DeepString<typeof en> = {
   },
   app: {
     connecting: '正在连接本地服务…',
-    connectErrorPre: '无法连接本地后端服务。请确认后端已启动（',
-    connectErrorPost: '）。',
+    backendDownTitle: '启动本地后端',
+    backendDownBody:
+      '本应用会在你自己的电脑上运行一个小型后端，所有数据都保存在本地。用 Docker 启动它，本页即会自动加载：',
+    backendDownRetry: '正在等待后端…本页将自动刷新。',
   },
   nav: {
     board: '求职看板',

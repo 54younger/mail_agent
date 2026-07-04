@@ -22,10 +22,14 @@ COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
 # Self-hosted single-user defaults. Data + secrets live in the mounted /data
 # volume (keyring is unavailable in a container → file-backed secrets).
+# MAIL_AGENT_CORS_ORIGINS: the origin(s) allowed to call this local backend.
+# When the frontend is hosted on Vercel, set this to your Vercel URL (override
+# at `docker run` with `-e MAIL_AGENT_CORS_ORIGINS=https://your-app.vercel.app`).
 ENV MAIL_AGENT_HOST=0.0.0.0 \
     MAIL_AGENT_PORT=8765 \
     MAIL_AGENT_DATA_DIR=/data \
-    MAIL_AGENT_SECRETS_FILE_BACKEND=1
+    MAIL_AGENT_SECRETS_FILE_BACKEND=1 \
+    MAIL_AGENT_CORS_ORIGINS=https://mail-agent.vercel.app
 
 EXPOSE 8765
 CMD ["python", "run.py"]

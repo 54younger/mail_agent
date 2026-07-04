@@ -72,6 +72,42 @@ secrets go to your OS keyring.
 Sharing with someone else: they clone the repo and run one of the above; each person
 keeps their own local database and never touches anyone else's data.
 
+## Hosted frontend (Vercel) + each user's local backend
+
+You can publish the **UI once on Vercel** while every user keeps running their **own
+backend + SQLite DB locally**. The public page talks to *that user's own*
+`http://127.0.0.1:8765` — no data ever leaves their machine.
+
+**1) Deploy the frontend to Vercel**
+
+- Import the repo in Vercel with **Root Directory = `frontend`** (config in
+  [`frontend/vercel.json`](frontend/vercel.json): Vite build, `dist` output, SPA rewrite).
+- Add an environment variable **`VITE_API_BASE_URL=http://127.0.0.1:8765`** so the hosted
+  UI calls each visitor's local backend (default is same-origin for local runs).
+
+**2) Each user runs the backend locally (Docker one-liner)**
+
+```bash
+docker run -d --name mailagent -p 127.0.0.1:8765:8765 \
+  -v mailagent-data:/data \
+  -e MAIL_AGENT_CORS_ORIGINS=https://your-app.vercel.app \
+  ghcr.io/OWNER/mail-agent:latest
+```
+
+Replace `OWNER` with your GitHub namespace (the image is published by
+[`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) on a `v*`
+tag) and `your-app.vercel.app` with your Vercel domain. The backend allows that origin
+(`MAIL_AGENT_CORS_ORIGINS`) and answers Chrome's Private Network Access preflight, so the
+HTTPS page can reach `http://127.0.0.1`. Data + encrypted secrets persist in the
+`mailagent-data` volume.
+
+Then open your Vercel URL. If the local backend isn't running yet, the page shows a
+start-your-backend screen and connects automatically once the container is up.
+
+**Caveats:** works in **Chrome / Edge / Firefox** (Safari blocks HTTPS→`http://localhost`);
+each user must install Docker; the backend stays bound to `127.0.0.1`, so it's never exposed
+to the internet.
+
 ## Status
 
 See [`PLAN.md`](PLAN.md) for the phased roadmap. Phase 0 (restructure + skeletons) is
