@@ -71,6 +71,10 @@ const en = {
     manualAddTitle: 'Add application manually',
     companyPlaceholder: 'Company name',
     positionPlaceholder: 'Position (optional)',
+    filterAll: 'All',
+    filterAria: 'Filter by status',
+    filterEmpty: 'No applications in this status.',
+    filterClear: 'Clear filter',
   },
   table: {
     company: 'Company',
@@ -324,6 +328,10 @@ const zh: DeepString<typeof en> = {
     manualAddTitle: '手动添加投递',
     companyPlaceholder: '公司名称',
     positionPlaceholder: '职位（可选）',
+    filterAll: '全部',
+    filterAria: '按状态筛选',
+    filterEmpty: '该状态暂无投递。',
+    filterClear: '清除筛选',
   },
   table: {
     company: '公司',

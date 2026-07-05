@@ -12,6 +12,8 @@ const STATUS_OFFER = 3;
 // hierarchy (big trend, supporting cards), semantic status colors, hover states.
 interface Props {
   stats: JobStats;
+  activeStatus?: number | null;
+  onStatusSelect?: (code: number) => void;
 }
 
 function countFor(stats: JobStats, code: number): number {
@@ -26,7 +28,7 @@ interface Kpi {
   accent: string;
 }
 
-export function StatsDashboard({ stats }: Props) {
+export function StatsDashboard({ stats, activeStatus = null, onStatusSelect }: Props) {
   const { t } = useI18n();
   const interviews = countFor(stats, STATUS_INTERVIEW);
   const offers = countFor(stats, STATUS_OFFER);
@@ -69,11 +71,11 @@ export function StatsDashboard({ stats }: Props) {
         <div className="flex flex-col gap-4">
           <div className="rounded-2xl border border-hairline bg-surface p-5 shadow-card">
             <h3 className="mb-3 font-display text-sm font-semibold text-ink-soft">{t('stats.funnelTitle')}</h3>
-            <FunnelChart stages={stats.funnel} />
+            <FunnelChart stages={stats.funnel} activeStatus={activeStatus} onSelect={onStatusSelect} />
           </div>
           <div className="rounded-2xl border border-hairline bg-surface p-5 shadow-card">
             <h3 className="mb-3 font-display text-sm font-semibold text-ink-soft">{t('stats.distributionTitle')}</h3>
-            <StatusDonut byStatus={stats.by_status} />
+            <StatusDonut byStatus={stats.by_status} activeStatus={activeStatus} onSelect={onStatusSelect} />
           </div>
         </div>
       </div>

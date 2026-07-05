@@ -5,6 +5,8 @@ import { useI18n } from '../../../i18n/useI18n';
 // (keys arrive as strings from JSON). Center shows the total.
 interface Props {
   byStatus: Record<string, number>;
+  activeStatus?: number | null;
+  onSelect?: (code: number) => void;
 }
 
 const SIZE = 160;
@@ -12,8 +14,9 @@ const R = 62;
 const STROKE = 22;
 const C = 2 * Math.PI * R;
 
-export function StatusDonut({ byStatus }: Props) {
+export function StatusDonut({ byStatus, activeStatus = null, onSelect }: Props) {
   const { t } = useI18n();
+  const dimmed = (code: number) => activeStatus != null && activeStatus !== code;
   const entries = JOB_STATUSES.map((s) => ({ meta: s, count: byStatus[String(s.code)] ?? 0 })).filter(
     (e) => e.count > 0,
   );
@@ -47,6 +50,12 @@ export function StatusDonut({ byStatus }: Props) {
               strokeDasharray={`${dash} ${C - dash}`}
               strokeDashoffset={-offset}
               strokeLinecap="butt"
+              onClick={onSelect ? () => onSelect(e.meta.code) : undefined}
+              style={{
+                cursor: onSelect ? 'pointer' : undefined,
+                opacity: dimmed(e.meta.code) ? 0.3 : 1,
+                transition: 'opacity 150ms',
+              }}
             />
           );
           offset += dash;
@@ -63,13 +72,31 @@ export function StatusDonut({ byStatus }: Props) {
       </svg>
 
       <ul className="flex flex-col gap-1.5 text-xs">
-        {entries.map((e) => (
-          <li key={e.meta.code} className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: e.meta.hex }} />
-            <span className="text-ink-soft">{statusLabel(e.meta.code, t)}</span>
-            <span className="tabular-nums font-medium text-ink">{e.count}</span>
-          </li>
-        ))}
+        {entries.map((e) => {
+          const inner = (
+            <>
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: e.meta.hex }} />
+              <span className="text-ink-soft">{statusLabel(e.meta.code, t)}</span>
+              <span className="tabular-nums font-medium text-ink">{e.count}</span>
+            </>
+          );
+          return (
+            <li key={e.meta.code} style={{ opacity: dimmed(e.meta.code) ? 0.4 : 1 }}>
+              {onSelect ? (
+                <button
+                  type="button"
+                  aria-pressed={activeStatus === e.meta.code}
+                  onClick={() => onSelect(e.meta.code)}
+                  className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-canvas-tint"
+                >
+                  {inner}
+                </button>
+              ) : (
+                <span className="flex items-center gap-2">{inner}</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

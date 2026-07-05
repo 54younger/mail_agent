@@ -17,6 +17,7 @@ import { CompanyTable } from './CompanyTable';
 import { ExtractProgress } from './ExtractProgress';
 import { JobDrawer } from './JobDrawer';
 import { StatsDashboard } from './StatsDashboard';
+import { StatusFilterBar } from './StatusFilterBar';
 
 type RangePreset = 'default' | '30' | '90' | 'all' | 'custom';
 
@@ -40,10 +41,18 @@ export function BoardPage() {
   const [preset, setPreset] = useState<RangePreset>('default');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [statusFilter, setStatusFilter] = useState<number | null>(null);
 
   const rows = summary.data ?? [];
   const status = extractStatus.data;
   const running = status?.running ?? false;
+
+  // Client-side status filter shared by the chip bar and the clickable
+  // donut/funnel. Selecting the active status again clears it.
+  const visibleRows =
+    statusFilter == null ? rows : rows.filter((r) => r.status_code === statusFilter);
+  const selectStatus = (code: number | null) =>
+    setStatusFilter((cur) => (cur === code ? null : code));
 
   // When a background extraction finishes, refresh the board and summarize.
   const wasRunning = useRef(false);
@@ -153,8 +162,23 @@ export function BoardPage() {
         <EmptyBoard message={t('board.empty')} />
       ) : (
         <div className="flex-1 space-y-5 overflow-auto p-6">
-          {stats.data && <StatsDashboard stats={stats.data} />}
-          <CompanyTable rows={rows} onSelect={setSelected} />
+          {stats.data && (
+            <StatsDashboard
+              stats={stats.data}
+              activeStatus={statusFilter}
+              onStatusSelect={selectStatus}
+            />
+          )}
+          <StatusFilterBar rows={rows} value={statusFilter} onChange={setStatusFilter} />
+          {visibleRows.length === 0 ? (
+            <FilterEmpty
+              message={t('board.filterEmpty')}
+              clearLabel={t('board.filterClear')}
+              onClear={() => setStatusFilter(null)}
+            />
+          ) : (
+            <CompanyTable rows={visibleRows} onSelect={setSelected} />
+          )}
         </div>
       )}
 
@@ -252,6 +276,29 @@ function EmptyBoard({ message }: { message: string }) {
         </svg>
       </div>
       <p className="max-w-md text-sm leading-relaxed text-ink-mute">{message}</p>
+    </div>
+  );
+}
+
+function FilterEmpty({
+  message,
+  clearLabel,
+  onClear,
+}: {
+  message: string;
+  clearLabel: string;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 rounded-2xl border border-dashed border-hairline bg-surface px-6 py-10 text-sm text-ink-mute">
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onClear}
+        className="rounded-full border border-hairline bg-surface px-3 py-1 text-xs font-medium text-ink-soft shadow-soft transition-colors hover:border-primary/40 hover:text-ink"
+      >
+        {clearLabel}
+      </button>
     </div>
   );
 }
