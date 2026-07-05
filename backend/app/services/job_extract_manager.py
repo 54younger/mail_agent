@@ -280,7 +280,7 @@ async def _run(since: datetime | None, until: datetime | None) -> None:
     except JobExtractionUnavailable as e:
         _state.error = e.message
     except Exception as e:  # noqa: BLE001 — surface any provider/DB error to the UI
-        _state.error = "求职抽取失败，请检查模型配置或稍后重试。"
+        _state.error = "Job extraction failed. Check the model configuration or try again later."
         _state.detail = f"{type(e).__name__}: {e}"
         _log.warning("Extraction failed", exc_info=True)
     finally:

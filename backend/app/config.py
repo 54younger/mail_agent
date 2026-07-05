@@ -119,14 +119,14 @@ def normalize_input_path(path: str | os.PathLike[str]) -> Path:
     """
     raw = str(path).strip().strip('"')
     if not raw:
-        raise ValueError("数据文件夹路径不能为空。")
+        raise ValueError("Data folder path cannot be empty.")
     if _looks_like_windows_path(raw) and _running_on_wsl():
         raw = _windows_to_wsl(raw)
     p = Path(raw).expanduser()
     if not p.is_absolute():
         raise ValueError(
-            "请输入绝对路径，例如 /home/you/mail-data、/mnt/c/Users/You/MailData，"
-            "或（在 WSL 中）C:\\Users\\You\\MailData。"
+            "Enter an absolute path, for example /home/you/mail-data, "
+            "/mnt/c/Users/You/MailData, or (on WSL) C:\\Users\\You\\MailData."
         )
     return p.resolve()
 
@@ -141,7 +141,7 @@ def set_data_dir(path: str | os.PathLike[str]) -> Path:
     data_dir = normalize_input_path(path)
     data_dir.mkdir(parents=True, exist_ok=True)
     if not os.access(data_dir, os.W_OK):
-        raise PermissionError(f"数据文件夹不可写：{data_dir}")
+        raise PermissionError(f"Data folder is not writable: {data_dir}")
 
     pointer = _bootstrap_config_path()
     pointer.parent.mkdir(parents=True, exist_ok=True)
@@ -163,14 +163,14 @@ def set_data_dir(path: str | os.PathLike[str]) -> Path:
 def db_path() -> Path:
     data_dir = get_data_dir()
     if data_dir is None:
-        raise RuntimeError("数据文件夹尚未配置，请先完成初始化设置。")
+        raise RuntimeError("Data folder is not configured yet. Complete first-run setup first.")
     return data_dir / "app.sqlite"
 
 
 def _settings_path() -> Path:
     data_dir = get_data_dir()
     if data_dir is None:
-        raise RuntimeError("数据文件夹尚未配置，请先完成初始化设置。")
+        raise RuntimeError("Data folder is not configured yet. Complete first-run setup first.")
     return data_dir / "settings.json"
 
 
@@ -209,7 +209,7 @@ def ensure_data_dir() -> Path:
     """
     data_dir = get_data_dir()
     if data_dir is None:
-        raise RuntimeError("数据文件夹尚未配置，请先完成初始化设置。")
+        raise RuntimeError("Data folder is not configured yet. Complete first-run setup first.")
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
@@ -239,7 +239,7 @@ def change_data_dir(path: str | os.PathLike[str]) -> Path:
     new = normalize_input_path(path)
     new.mkdir(parents=True, exist_ok=True)
     if not os.access(new, os.W_OK):
-        raise PermissionError(f"数据文件夹不可写：{new}")
+        raise PermissionError(f"Data folder is not writable: {new}")
 
     if old is not None and old.exists() and old.resolve() != new.resolve():
         for name in _MIGRATE_FILES:

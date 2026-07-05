@@ -64,7 +64,7 @@ async def start_sync(*, full: bool) -> bool:
             return False
         snaps = await _load_account_snapshots()
         if not snaps:
-            _state = SyncState(error="尚未绑定邮箱账户", kind=ImapErrorKind.UNKNOWN.value)
+            _state = SyncState(error="No mailbox account connected yet", kind=ImapErrorKind.UNKNOWN.value)
             return False
         _state = SyncState(running=True)
         asyncio.create_task(_run_all(snaps, full))

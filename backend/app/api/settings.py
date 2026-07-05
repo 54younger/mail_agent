@@ -82,7 +82,7 @@ async def get_settings() -> SettingsOut:
 @router.put("/translation-target", response_model=SettingsOut)
 async def set_translation_target(payload: TranslationTargetIn) -> SettingsOut:
     if payload.translation_target not in translation.TRANSLATION_TARGETS:
-        raise HTTPException(status_code=400, detail="不支持的目标语言")
+        raise HTTPException(status_code=400, detail="Unsupported target language")
     config.save_settings({"translation_target": payload.translation_target})
     return _current()
 
@@ -141,7 +141,7 @@ async def set_jobs_config(payload: JobsConfigIn) -> SettingsOut:
     if payload.status_rules is not None:
         for rule in payload.status_rules:
             if rule.status not in job_config.STATUS_BY_NAME:
-                raise HTTPException(status_code=400, detail=f"未知的状态：{rule.status}")
+                raise HTTPException(status_code=400, detail=f"Unknown status: {rule.status}")
         current["status_rules"] = [
             {"keywords": r.keywords, "status": r.status} for r in payload.status_rules
         ]
@@ -152,7 +152,7 @@ async def set_jobs_config(payload: JobsConfigIn) -> SettingsOut:
 @router.put("/llm/{role}/key", response_model=SettingsOut)
 async def set_llm_role_key(role: str, payload: LLMKeyIn) -> SettingsOut:
     if role not in llm.ROLES:
-        raise HTTPException(status_code=400, detail="未知的模型用途")
+        raise HTTPException(status_code=400, detail="Unknown model role")
     await run_in_threadpool(llm.set_role_key, role, payload.api_key.strip())
     return _current()
 
@@ -172,7 +172,7 @@ async def change_data_folder(payload: DataFolderChangeIn) -> SettingsOut:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except (PermissionError, OSError) as e:
-        raise HTTPException(status_code=400, detail=f"无法使用该文件夹：{e}") from e
+        raise HTTPException(status_code=400, detail=f"Cannot use this folder: {e}") from e
 
     # Reopen the engine against the (migrated) SQLite file and ensure schema.
     await db.reset_engine()

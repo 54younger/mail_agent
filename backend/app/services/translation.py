@@ -32,7 +32,7 @@ _MAX_INPUT_CHARS = 12_000
 class TranslationUnavailable(Exception):
     """Raised when translation can't run (no API key configured)."""
 
-    def __init__(self, message: str = "翻译不可用：请先在设置中配置 Claude API Key。"):
+    def __init__(self, message: str = "Translation unavailable: configure a Claude API key in Settings first."):
         super().__init__(message)
         self.message = message
 

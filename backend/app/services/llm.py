@@ -52,7 +52,7 @@ _DEFAULT_ROLE_CONFIG: dict[str, dict[str, object]] = {
 class LLMUnavailable(Exception):
     """Raised when a role has no usable config (missing API key or model)."""
 
-    def __init__(self, message: str = "LLM 未配置：请先在设置中为该功能配置厂商 API Key 与模型。"):
+    def __init__(self, message: str = "LLM not configured: set a provider API key and model for this feature in Settings first."):
         super().__init__(message)
         self.message = message
 
@@ -159,9 +159,9 @@ def set_role_settings(
     prompt: object = _UNSET,
 ) -> None:
     if role not in ROLES:
-        raise ValueError("未知的模型用途")
+        raise ValueError("Unknown model role")
     if provider not in PROVIDERS:
-        raise ValueError("不支持的厂商")
+        raise ValueError("Unsupported provider")
     llm = dict(config.load_settings().get("llm", {}) or {})
     prev = llm.get(role, {}) if isinstance(llm.get(role), dict) else {}
     # Advanced fields only change when explicitly supplied, so a basic save (which

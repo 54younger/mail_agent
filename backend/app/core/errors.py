@@ -97,34 +97,46 @@ def classify_imap_error(exc: object) -> ImapErrorKind:
 
 
 _USER_MESSAGE: dict[ImapErrorKind, str] = {
-    ImapErrorKind.AUTH_FAILED: "密码或授权码错误",
-    ImapErrorKind.IMAP_DISABLED: "IMAP 服务未启用",
-    ImapErrorKind.ACCOUNT_LOCKED: "账户登录被安全拦截",
-    ImapErrorKind.NETWORK_ERROR: "网络连接失败",
-    ImapErrorKind.TLS_ERROR: "SSL 加密连接失败",
-    ImapErrorKind.SERVER_ERROR: "邮件服务器暂时不可用",
-    ImapErrorKind.UNKNOWN: "同步失败",
+    ImapErrorKind.AUTH_FAILED: "Wrong password or app auth code",
+    ImapErrorKind.IMAP_DISABLED: "IMAP access is not enabled",
+    ImapErrorKind.ACCOUNT_LOCKED: "Sign-in blocked by the provider's security check",
+    ImapErrorKind.NETWORK_ERROR: "Network connection failed",
+    ImapErrorKind.TLS_ERROR: "SSL/TLS connection failed",
+    ImapErrorKind.SERVER_ERROR: "Mail server is temporarily unavailable",
+    ImapErrorKind.UNKNOWN: "Sync failed",
 }
 
 _HINT: dict[ImapErrorKind, str] = {
     ImapErrorKind.AUTH_FAILED: (
-        "163、QQ、Gmail 等邮箱需使用「授权码」而非登录密码。\n"
-        "请在网页版邮箱 → 设置 → 账户安全 → 开启 IMAP → 生成授权码，然后重新绑定。"
+        "Providers like 163, QQ, and Gmail require an app-specific auth code, "
+        "not your login password.\n"
+        "In your mailbox's web settings → Account security → enable IMAP → "
+        "generate an auth code, then connect again."
     ),
     ImapErrorKind.IMAP_DISABLED: (
-        "请在网页版邮箱开启 IMAP 服务：\n"
-        "设置 → POP3/SMTP/IMAP → 开启 IMAP 服务，再重新绑定账号。"
+        "Enable IMAP in your mailbox's web settings:\n"
+        "Settings → POP3/SMTP/IMAP → turn on IMAP, then connect the account again."
     ),
     ImapErrorKind.ACCOUNT_LOCKED: (
-        "163/QQ 邮箱检测到新设备登录，已触发安全保护。\n"
-        "请登录网页版邮箱完成安全验证，或改用「授权码」代替密码后重新绑定。"
+        "163/QQ detected a sign-in from a new device and triggered a security block.\n"
+        "Complete the security verification in the mailbox's web interface, or "
+        "switch to an app-specific auth code instead of your password, then connect again."
     ),
-    ImapErrorKind.NETWORK_ERROR: "请检查网络连接，并确认防火墙未屏蔽 IMAP 端口（993）。",
+    ImapErrorKind.NETWORK_ERROR: (
+        "Check your network connection and make sure a firewall isn't blocking "
+        "the IMAP port (993)."
+    ),
     ImapErrorKind.TLS_ERROR: (
-        "请确认未使用拦截 HTTPS 流量的代理或企业防火墙，或切换至其他网络后重试。"
+        "Make sure you're not behind a proxy or corporate firewall that intercepts "
+        "HTTPS traffic, or switch to another network and try again."
     ),
-    ImapErrorKind.SERVER_ERROR: "邮件服务器临时故障，请等待几分钟后点击「重试」。",
-    ImapErrorKind.UNKNOWN: "请检查邮箱地址、密码和服务器配置是否正确，或重新绑定账号。",
+    ImapErrorKind.SERVER_ERROR: (
+        "The mail server is having a temporary problem. Wait a few minutes and click Retry."
+    ),
+    ImapErrorKind.UNKNOWN: (
+        "Check that the email address, password, and server settings are correct, "
+        "or connect the account again."
+    ),
 }
 
 

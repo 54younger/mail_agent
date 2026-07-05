@@ -92,7 +92,7 @@ async def delete_account(
 ) -> None:
     acc = await session.get(Account, account_id)
     if acc is None:
-        raise HTTPException(status_code=404, detail="账户不存在")
+        raise HTTPException(status_code=404, detail="Account not found")
 
     # Remove jobs extracted from this account's emails, then the emails.
     email_ids = (

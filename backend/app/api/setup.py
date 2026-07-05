@@ -19,7 +19,7 @@ async def set_data_folder(payload: DataFolderIn) -> DataFolderOut:
         # Relative/empty path — message is already user-friendly.
         raise HTTPException(status_code=400, detail=str(e)) from e
     except (PermissionError, OSError) as e:
-        raise HTTPException(status_code=400, detail=f"无法使用该文件夹：{e}") from e
+        raise HTTPException(status_code=400, detail=f"Cannot use this folder: {e}") from e
 
     # Point the engine at the (possibly new) SQLite file and create tables.
     await db.reset_engine()

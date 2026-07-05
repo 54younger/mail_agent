@@ -97,7 +97,7 @@ _TOOL = {
 
 
 class JobExtractionUnavailable(Exception):
-    def __init__(self, message: str = "求职抽取不可用：请先在设置中配置分类/抽取模型的 API Key。"):
+    def __init__(self, message: str = "Job extraction unavailable: configure an API key for the classify/extract models in Settings first."):
         super().__init__(message)
         self.message = message
 

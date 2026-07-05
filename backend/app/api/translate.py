@@ -21,7 +21,7 @@ async def translate_email(
 ) -> EmailDetail:
     email = await session.get(EmailMessage, email_id)
     if email is None:
-        raise HTTPException(status_code=404, detail="邮件不存在")
+        raise HTTPException(status_code=404, detail="Email not found")
 
     # Serve cached translation if present.
     if email.translated_text is not None:

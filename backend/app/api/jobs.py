@@ -310,7 +310,7 @@ async def create_job(
 async def _get_or_404(session: AsyncSession, job_id: int) -> JobApplication:
     job = await session.get(JobApplication, job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="求职记录不存在")
+        raise HTTPException(status_code=404, detail="Application not found")
     return job
 
 
